@@ -109,7 +109,7 @@ export function TelemetryPanel({
         <div className="border-t border-zinc-200 px-5 py-4 dark:border-zinc-800">
           {!s ? (
             <p className="text-sm text-zinc-400 dark:text-zinc-600">
-              No session yet — telemetry starts when you click Start session.
+              No session yet. Telemetry starts when you click Start session.
             </p>
           ) : (
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">

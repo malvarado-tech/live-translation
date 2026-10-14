@@ -247,7 +247,7 @@ export default function ListenerPage({
               Disconnect
             </button>
 
-            <div className="flex items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
               <label className="flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"
@@ -266,7 +266,7 @@ export default function ListenerPage({
                 />
                 <span>Captions</span>
               </label>
-              <div className="flex flex-1 items-center gap-2 text-sm">
+              <div className="flex min-w-40 flex-1 items-center gap-2 text-sm">
                 <span className="text-xs text-zinc-500 dark:text-zinc-400">
                   Vol
                 </span>
@@ -277,7 +277,7 @@ export default function ListenerPage({
                   step={0.05}
                   value={volume}
                   onChange={(e) => setVolume(Number(e.target.value))}
-                  className="flex-1 accent-emerald-600"
+                  className="min-w-0 flex-1 accent-emerald-600"
                 />
               </div>
             </div>

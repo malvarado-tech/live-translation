@@ -950,7 +950,7 @@ export default function OperatorPage() {
             <span>
               Raw audio{" "}
               <span className="text-xs text-zinc-500 dark:text-zinc-400">
-                (disable browser DSP — for VB-Cable / line-level feeds)
+                (disable browser DSP. For VB-Cable / line-level feeds)
               </span>
             </span>
           </label>
@@ -973,7 +973,7 @@ export default function OperatorPage() {
               className="flex items-center gap-1.5 text-sm"
               title={
                 value === "source"
-                  ? "Listen to the raw mic input — useful to verify the mic is picking up cleanly. Use headphones to avoid feedback."
+                  ? "Listen to the raw mic input. Useful to verify the mic is picking up cleanly. Use headphones to avoid feedback."
                   : value === "openai"
                     ? "Listen to the OpenAI translated audio."
                     : "Silence both."
@@ -1063,7 +1063,7 @@ export default function OperatorPage() {
               </div>
               <label className="flex flex-col gap-1">
                 <span className="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-600">
-                  Base URL — must be reachable from phones (not localhost)
+                  Base URL: must be reachable from phones (not localhost)
                 </span>
                 <input
                   type="text"
@@ -1078,7 +1078,7 @@ export default function OperatorPage() {
               </div>
               {phase === "room-open" ? (
                 <div className="rounded-md border border-sky-300 bg-sky-50 px-3 py-2 text-xs text-sky-900 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-200">
-                  Room is open — share this link now. Listeners who connect will
+                  Room is open. Share this link now. Listeners who connect will
                   hear &ldquo;waiting for the speaker&rdquo; until you click{" "}
                   <strong>Start translation</strong>.
                 </div>
