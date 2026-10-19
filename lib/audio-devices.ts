@@ -11,7 +11,7 @@
  * it as of 2026. `outputSupported` reports the runtime capability so the UI
  * can disable the output dropdown gracefully.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 
 export type AudioDevice = {
   deviceId: string;
@@ -38,20 +38,30 @@ export type UseAudioDevices = {
 const DEFAULT_INPUT_LABEL = "System default microphone";
 const DEFAULT_OUTPUT_LABEL = "System default output";
 
+const noopSubscribe = () => () => {};
+
+let sinkSupport: boolean | null = null;
+
+function detectSinkSupport(): boolean {
+  if (sinkSupport === null) {
+    const audio = document.createElement("audio") as SinkCapableElement;
+    sinkSupport = typeof audio.setSinkId === "function";
+  }
+  return sinkSupport;
+}
+
 export function useAudioDevices(): UseAudioDevices {
   const [inputs, setInputs] = useState<AudioDevice[]>([]);
   const [outputs, setOutputs] = useState<AudioDevice[]>([]);
   const [selectedInput, setSelectedInput] = useState<string>("");
   const [selectedOutput, setSelectedOutput] = useState<string>("");
   const [hasPermission, setHasPermission] = useState(false);
-  const [outputSupported, setOutputSupported] = useState(false);
-
-  // Detect setSinkId support on mount (client only).
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const audio = document.createElement("audio") as SinkCapableElement;
-    setOutputSupported(typeof audio.setSinkId === "function");
-  }, []);
+  // setSinkId support, read on the client only (false on the server).
+  const outputSupported = useSyncExternalStore(
+    noopSubscribe,
+    detectSinkSupport,
+    () => false,
+  );
 
   const refresh = useCallback(async () => {
     if (typeof navigator === "undefined" || !navigator.mediaDevices) return;
@@ -89,12 +99,15 @@ export function useAudioDevices(): UseAudioDevices {
   }, [refresh]);
 
   useEffect(() => {
-    void refresh();
+    // First scan on the next tick, through the same path as devicechange.
+    const first = setTimeout(() => void refresh(), 0);
     if (typeof navigator === "undefined" || !navigator.mediaDevices) return;
     const handler = () => void refresh();
     navigator.mediaDevices.addEventListener("devicechange", handler);
-    return () =>
+    return () => {
+      clearTimeout(first);
       navigator.mediaDevices.removeEventListener("devicechange", handler);
+    };
   }, [refresh]);
 
   return {
