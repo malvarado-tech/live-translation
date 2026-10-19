@@ -1,0 +1,635 @@
+{
+  "version": 1,
+  "generated": "2026-10-18",
+  "title": "Address at Rice University on the Nation's Space Effort (excerpt)",
+  "source": {
+    "speaker": "John F. Kennedy",
+    "event": "Address at Rice University, Houston, Texas",
+    "date": "1962-09-12",
+    "language": "en-US",
+    "source_url": "https://commons.wikimedia.org/wiki/File:Jfk_rice_university_we_choose_to_go_to_the_moon.ogg",
+    "media_url": "https://upload.wikimedia.org/wikipedia/commons/5/50/Jfk_rice_university_we_choose_to_go_to_the_moon.ogg",
+    "original_archive": "John F. Kennedy Presidential Library and Museum, https://www.jfklibrary.org/asset-viewer/archives/jfkwha-127-002",
+    "license": "Public domain (PD-USGov)",
+    "license_text": "This work is in the public domain in the United States because it is a work prepared by an officer or employee of the United States Government as part of that person's official duties under the terms of Title 17, Chapter 1, Section 105 of the US Code.",
+    "license_url": "https://commons.wikimedia.org/wiki/Template:PD-USGov",
+    "attribution": "Audio: John F. Kennedy, Address at Rice University on the Nation's Space Effort, September 12, 1962. Public domain, courtesy of the John F. Kennedy Presidential Library and Museum via Wikimedia Commons. Excerpt trimmed; translated captions and synthetic translated voice are derived works, and the voice is AI-generated, not the speaker's.",
+    "excerpt": {
+      "original_start_s": 409.6,
+      "original_end_s": 556.0,
+      "original_duration_s": 1060.25,
+      "edits": "trimmed, mono, 0.3 s fade-in and 2 s fade-out, loudness normalized to -18 LUFS"
+    },
+    "contains": "Single speaker with crowd applause and laughter; no music"
+  },
+  "duration_s": 146.4,
+  "source_track": {
+    "captions": "captions/en.vtt",
+    "audio": {
+      "mp3": "audio/source_en.mp3",
+      "webm_opus": "audio/source_en.webm"
+    },
+    "transcription": {
+      "method": "Local faster-whisper large-v3-turbo with word timestamps, segments split at sentence and clause boundaries, spot-checked against the published speech text (Wikisource, We choose to go to the moon); text follows what was spoken"
+    }
+  },
+  "files": {
+    "source_en.mp3": {
+      "file": "audio/source_en.mp3",
+      "duration_s": 146.4,
+      "bytes": 1171791
+    },
+    "source_en.webm": {
+      "file": "audio/source_en.webm",
+      "duration_s": 146.5,
+      "bytes": 763075
+    },
+    "tts_es.mp3": {
+      "file": "audio/tts_es.mp3",
+      "duration_s": 146.4,
+      "bytes": 878924
+    },
+    "tts_es.webm": {
+      "file": "audio/tts_es.webm",
+      "duration_s": 146.4,
+      "bytes": 582358
+    },
+    "tts_pt.mp3": {
+      "file": "audio/tts_pt.mp3",
+      "duration_s": 146.4,
+      "bytes": 878924
+    },
+    "tts_pt.webm": {
+      "file": "audio/tts_pt.webm",
+      "duration_s": 146.4,
+      "bytes": 591063
+    }
+  },
+  "languages": [
+    {
+      "code": "es",
+      "bcp47": "es-MX",
+      "label": "Español (México)",
+      "captions": "captions/es.vtt",
+      "audio": {
+        "mp3": "audio/tts_es.mp3",
+        "webm_opus": "audio/tts_es.webm"
+      },
+      "tts": {
+        "provider": "OpenAI",
+        "model": "gpt-4o-mini-tts",
+        "voice": "onyx",
+        "synthetic": true
+      },
+      "translation": {
+        "method": "Machine translation drafted by Claude (AI model), lightly edited to fit segment timing; not reviewed by a professional translator",
+        "register": "neutral Mexican Spanish"
+      },
+      "segments": [
+        {
+          "id": 1,
+          "start": 0.42,
+          "end": 8.28,
+          "source_text": "We set sail on this new sea because there is new knowledge to be gained and new rights to be won,",
+          "text": "Zarpamos en este nuevo mar porque hay nuevos conocimientos que adquirir y nuevos derechos que conquistar,",
+          "audio_start": 0.42,
+          "audio_end": 8.39,
+          "time_stretch": 1.034
+        },
+        {
+          "id": 2,
+          "start": 8.52,
+          "end": 13.44,
+          "source_text": "and they must be won and used for the progress of all people.",
+          "text": "y deben conquistarse y usarse para el progreso de todos los pueblos.",
+          "audio_start": 8.52,
+          "audio_end": 12.92,
+          "time_stretch": 1.0
+        },
+        {
+          "id": 3,
+          "start": 14.2,
+          "end": 20.86,
+          "source_text": "For space science, like nuclear science and all technology, has no conscience of its own.",
+          "text": "Porque la ciencia espacial, como la ciencia nuclear y toda la tecnología, no tiene conciencia propia.",
+          "audio_start": 14.2,
+          "audio_end": 21.73,
+          "time_stretch": 1.074
+        },
+        {
+          "id": 4,
+          "start": 21.84,
+          "end": 26.0,
+          "source_text": "Whether it will become a force for good or ill depends on man.",
+          "text": "Que sea una fuerza para el bien o para el mal depende del hombre.",
+          "audio_start": 21.84,
+          "audio_end": 25.89,
+          "time_stretch": 1.06
+        },
+        {
+          "id": 5,
+          "start": 26.0,
+          "end": 32.26,
+          "source_text": "And only if the United States occupies a position of preeminence",
+          "text": "Y solo si Estados Unidos ocupa una posición de preeminencia",
+          "audio_start": 26.0,
+          "audio_end": 29.6,
+          "time_stretch": 1.0
+        },
+        {
+          "id": 6,
+          "start": 32.26,
+          "end": 42.8,
+          "source_text": "can we help decide whether this new ocean will be a sea of peace or a new terrifying theater of war.",
+          "text": "podremos ayudar a decidir si este nuevo océano será un mar de paz o un nuevo y aterrador escenario de guerra.",
+          "audio_start": 32.26,
+          "audio_end": 39.96,
+          "time_stretch": 1.0
+        },
+        {
+          "id": 7,
+          "start": 43.84,
+          "end": 50.98,
+          "source_text": "I do not say that we should or will go unprotected against the hostile misuse of space",
+          "text": "No digo que debamos ni que vayamos a quedar desprotegidos ante el uso hostil del espacio,",
+          "audio_start": 43.84,
+          "audio_end": 50.18,
+          "time_stretch": 1.0
+        },
+        {
+          "id": 8,
+          "start": 50.98,
+          "end": 57.38,
+          "source_text": "any more than we go unprotected against the hostile use of land or sea.",
+          "text": "como tampoco lo estamos ante el uso hostil de la tierra o del mar.",
+          "audio_start": 50.98,
+          "audio_end": 55.25,
+          "time_stretch": 1.0
+        },
+        {
+          "id": 9,
+          "start": 58.14,
+          "end": 64.64,
+          "source_text": "But I do say that space can be explored and mastered without feeding the fires of war,",
+          "text": "Pero sí digo que el espacio puede explorarse y dominarse sin avivar las llamas de la guerra,",
+          "audio_start": 58.14,
+          "audio_end": 63.75,
+          "time_stretch": 1.0
+        },
+        {
+          "id": 10,
+          "start": 64.88,
+          "end": 71.36,
+          "source_text": "without repeating the mistakes that man has made in extending his writ around this globe of ours.",
+          "text": "sin repetir los errores que el hombre ha cometido al extender su dominio por este mundo nuestro.",
+          "audio_start": 64.88,
+          "audio_end": 71.26,
+          "time_stretch": 1.072
+        },
+        {
+          "id": 11,
+          "start": 71.36,
+          "end": 78.62,
+          "source_text": "There is no strife, no prejudice, no national conflict in outer space as yet.",
+          "text": "No hay contienda, ni prejuicio, ni conflicto nacional en el espacio exterior, por ahora.",
+          "audio_start": 71.36,
+          "audio_end": 78.71,
+          "time_stretch": 1.0
+        },
+        {
+          "id": 12,
+          "start": 79.2,
+          "end": 81.8,
+          "source_text": "Its hazards are hostile to us all.",
+          "text": "Sus peligros nos amenazan a todos.",
+          "audio_start": 79.2,
+          "audio_end": 81.81,
+          "time_stretch": 1.0
+        },
+        {
+          "id": 13,
+          "start": 82.28,
+          "end": 85.66,
+          "source_text": "Its conquest deserves the best of all mankind.",
+          "text": "Su conquista merece lo mejor de toda la humanidad.",
+          "audio_start": 82.28,
+          "audio_end": 86.08,
+          "time_stretch": 1.0
+        },
+        {
+          "id": 14,
+          "start": 86.36,
+          "end": 91.02,
+          "source_text": "And its opportunity for peaceful cooperation may never come again.",
+          "text": "Y su oportunidad de cooperación pacífica quizá nunca vuelva a presentarse.",
+          "audio_start": 86.36,
+          "audio_end": 91.47,
+          "time_stretch": 1.0
+        },
+        {
+          "id": 15,
+          "start": 91.72,
+          "end": 93.92,
+          "source_text": "But why, some say, the moon?",
+          "text": "Algunos dicen: ¿por qué la Luna?",
+          "audio_start": 91.72,
+          "audio_end": 94.01,
+          "time_stretch": 1.0
+        },
+        {
+          "id": 16,
+          "start": 94.5,
+          "end": 96.66,
+          "source_text": "Why choose this as our goal?",
+          "text": "¿Por qué elegirla como nuestra meta?",
+          "audio_start": 94.5,
+          "audio_end": 96.95,
+          "time_stretch": 1.0
+        },
+        {
+          "id": 17,
+          "start": 97.34,
+          "end": 101.22,
+          "source_text": "And they may well ask, why climb the highest mountain?",
+          "text": "Y bien podrían preguntar: ¿por qué escalar la montaña más alta?",
+          "audio_start": 97.34,
+          "audio_end": 101.89,
+          "time_stretch": 1.0
+        },
+        {
+          "id": 18,
+          "start": 102.04,
+          "end": 105.26,
+          "source_text": "Why, 35 years ago, fly the Atlantic?",
+          "text": "¿Por qué, hace 35 años, sobrevolar el Atlántico?",
+          "audio_start": 102.04,
+          "audio_end": 105.64,
+          "time_stretch": 1.3
+        },
+        {
+          "id": 19,
+          "start": 105.7,
+          "end": 107.54,
+          "source_text": "Why does Rice play Texas?",
+          "text": "¿Por qué Rice contra Texas?",
+          "audio_start": 105.7,
+          "audio_end": 107.82,
+          "time_stretch": 1.089
+        },
+        {
+          "id": 20,
+          "start": 107.92,
+          "end": 109.78,
+          "source_text": "We choose to go to the moon.",
+          "text": "Elegimos ir a la Luna.",
+          "audio_start": 107.92,
+          "audio_end": 109.49,
+          "time_stretch": 1.0
+        },
+        {
+          "id": 21,
+          "start": 110.48,
+          "end": 112.4,
+          "source_text": "We choose to go to the moon.",
+          "text": "Elegimos ir a la Luna.",
+          "audio_start": 110.48,
+          "audio_end": 112.3,
+          "time_stretch": 1.0
+        },
+        {
+          "id": 22,
+          "start": 118.32,
+          "end": 122.7,
+          "source_text": "We choose to go to the moon in this decade and do the other things,",
+          "text": "Elegimos ir a la Luna en esta década y hacer las demás cosas,",
+          "audio_start": 118.32,
+          "audio_end": 122.9,
+          "time_stretch": 1.175
+        },
+        {
+          "id": 23,
+          "start": 123.0,
+          "end": 126.4,
+          "source_text": "not because they are easy, but because they are hard.",
+          "text": "no porque sean fáciles, sino porque son difíciles.",
+          "audio_start": 123.0,
+          "audio_end": 126.78,
+          "time_stretch": 1.207
+        },
+        {
+          "id": 24,
+          "start": 126.88,
+          "end": 133.74,
+          "source_text": "Because that goal will serve to organize and measure the best of our energies and skills.",
+          "text": "Porque esa meta servirá para organizar y medir lo mejor de nuestras energías y habilidades.",
+          "audio_start": 126.88,
+          "audio_end": 133.81,
+          "time_stretch": 1.0
+        },
+        {
+          "id": 25,
+          "start": 134.14,
+          "end": 137.68,
+          "source_text": "Because that challenge is one that we're willing to accept,",
+          "text": "Porque ese es un desafío que estamos dispuestos a aceptar,",
+          "audio_start": 134.14,
+          "audio_end": 138.09,
+          "time_stretch": 1.0
+        },
+        {
+          "id": 26,
+          "start": 138.45,
+          "end": 143.8,
+          "source_text": "one we are unwilling to postpone, and one we intend to win, and the others too.",
+          "text": "uno que no queremos posponer y que pretendemos ganar, igual que los demás.",
+          "audio_start": 138.45,
+          "audio_end": 143.78,
+          "time_stretch": 1.0
+        }
+      ]
+    },
+    {
+      "code": "pt",
+      "bcp47": "pt-BR",
+      "label": "Português (Brasil)",
+      "captions": "captions/pt.vtt",
+      "audio": {
+        "mp3": "audio/tts_pt.mp3",
+        "webm_opus": "audio/tts_pt.webm"
+      },
+      "tts": {
+        "provider": "OpenAI",
+        "model": "gpt-4o-mini-tts",
+        "voice": "onyx",
+        "synthetic": true
+      },
+      "translation": {
+        "method": "Machine translation drafted by Claude (AI model), lightly edited to fit segment timing; not reviewed by a professional translator",
+        "register": "Brazilian Portuguese"
+      },
+      "segments": [
+        {
+          "id": 1,
+          "start": 0.42,
+          "end": 8.28,
+          "source_text": "We set sail on this new sea because there is new knowledge to be gained and new rights to be won,",
+          "text": "Zarpamos neste novo mar porque há novos conhecimentos a adquirir e novos direitos a conquistar,",
+          "audio_start": 0.42,
+          "audio_end": 7.8,
+          "time_stretch": 1.0
+        },
+        {
+          "id": 2,
+          "start": 8.52,
+          "end": 13.44,
+          "source_text": "and they must be won and used for the progress of all people.",
+          "text": "e eles devem ser conquistados e usados para o progresso de todos os povos.",
+          "audio_start": 8.52,
+          "audio_end": 14.09,
+          "time_stretch": 1.034
+        },
+        {
+          "id": 3,
+          "start": 14.2,
+          "end": 20.86,
+          "source_text": "For space science, like nuclear science and all technology, has no conscience of its own.",
+          "text": "Pois a ciência espacial, assim como a ciência nuclear e toda a tecnologia, não tem consciência própria.",
+          "audio_start": 14.2,
+          "audio_end": 20.97,
+          "time_stretch": 1.0
+        },
+        {
+          "id": 4,
+          "start": 21.84,
+          "end": 26.0,
+          "source_text": "Whether it will become a force for good or ill depends on man.",
+          "text": "Ser uma força para o bem ou para o mal depende do homem.",
+          "audio_start": 21.84,
+          "audio_end": 25.89,
+          "time_stretch": 1.044
+        },
+        {
+          "id": 5,
+          "start": 26.0,
+          "end": 32.26,
+          "source_text": "And only if the United States occupies a position of preeminence",
+          "text": "E somente se os Estados Unidos ocuparem uma posição de preeminência",
+          "audio_start": 26.0,
+          "audio_end": 30.41,
+          "time_stretch": 1.0
+        },
+        {
+          "id": 6,
+          "start": 32.26,
+          "end": 42.8,
+          "source_text": "can we help decide whether this new ocean will be a sea of peace or a new terrifying theater of war.",
+          "text": "poderemos ajudar a decidir se este novo oceano será um mar de paz ou um novo e aterrador palco de guerra.",
+          "audio_start": 32.26,
+          "audio_end": 40.98,
+          "time_stretch": 1.0
+        },
+        {
+          "id": 7,
+          "start": 43.84,
+          "end": 50.98,
+          "source_text": "I do not say that we should or will go unprotected against the hostile misuse of space",
+          "text": "Não digo que devamos ou que vamos ficar desprotegidos contra o uso hostil do espaço,",
+          "audio_start": 43.84,
+          "audio_end": 50.76,
+          "time_stretch": 1.0
+        },
+        {
+          "id": 8,
+          "start": 50.98,
+          "end": 57.38,
+          "source_text": "any more than we go unprotected against the hostile use of land or sea.",
+          "text": "assim como não ficamos desprotegidos contra o uso hostil da terra ou do mar.",
+          "audio_start": 50.98,
+          "audio_end": 56.62,
+          "time_stretch": 1.0
+        },
+        {
+          "id": 9,
+          "start": 58.14,
+          "end": 64.64,
+          "source_text": "But I do say that space can be explored and mastered without feeding the fires of war,",
+          "text": "Mas digo, sim, que o espaço pode ser explorado e dominado sem alimentar as chamas da guerra,",
+          "audio_start": 58.14,
+          "audio_end": 64.78,
+          "time_stretch": 1.068
+        },
+        {
+          "id": 10,
+          "start": 64.88,
+          "end": 71.36,
+          "source_text": "without repeating the mistakes that man has made in extending his writ around this globe of ours.",
+          "text": "sem repetir os erros que o homem cometeu ao estender seu domínio por este nosso mundo.",
+          "audio_start": 64.88,
+          "audio_end": 71.14,
+          "time_stretch": 1.0
+        },
+        {
+          "id": 11,
+          "start": 71.36,
+          "end": 78.62,
+          "source_text": "There is no strife, no prejudice, no national conflict in outer space as yet.",
+          "text": "Não há disputa, nem preconceito, nem conflito nacional no espaço sideral, por enquanto.",
+          "audio_start": 71.36,
+          "audio_end": 78.85,
+          "time_stretch": 1.0
+        },
+        {
+          "id": 12,
+          "start": 79.2,
+          "end": 81.8,
+          "source_text": "Its hazards are hostile to us all.",
+          "text": "Seus perigos ameaçam a todos nós.",
+          "audio_start": 79.2,
+          "audio_end": 82.16,
+          "time_stretch": 1.002
+        },
+        {
+          "id": 13,
+          "start": 82.28,
+          "end": 85.66,
+          "source_text": "Its conquest deserves the best of all mankind.",
+          "text": "Sua conquista merece o melhor de toda a humanidade.",
+          "audio_start": 82.28,
+          "audio_end": 86.09,
+          "time_stretch": 1.0
+        },
+        {
+          "id": 14,
+          "start": 86.36,
+          "end": 91.02,
+          "source_text": "And its opportunity for peaceful cooperation may never come again.",
+          "text": "E sua oportunidade de cooperação pacífica talvez nunca mais se repita.",
+          "audio_start": 86.36,
+          "audio_end": 91.2,
+          "time_stretch": 1.0
+        },
+        {
+          "id": 15,
+          "start": 91.72,
+          "end": 93.92,
+          "source_text": "But why, some say, the moon?",
+          "text": "Alguns dizem: por que a Lua?",
+          "audio_start": 91.72,
+          "audio_end": 93.99,
+          "time_stretch": 1.0
+        },
+        {
+          "id": 16,
+          "start": 94.5,
+          "end": 96.66,
+          "source_text": "Why choose this as our goal?",
+          "text": "Por que escolher isso como nossa meta?",
+          "audio_start": 94.5,
+          "audio_end": 96.64,
+          "time_stretch": 1.0
+        },
+        {
+          "id": 17,
+          "start": 97.34,
+          "end": 101.22,
+          "source_text": "And they may well ask, why climb the highest mountain?",
+          "text": "E bem podem perguntar: por que escalar a montanha mais alta?",
+          "audio_start": 97.34,
+          "audio_end": 101.81,
+          "time_stretch": 1.0
+        },
+        {
+          "id": 18,
+          "start": 102.04,
+          "end": 105.26,
+          "source_text": "Why, 35 years ago, fly the Atlantic?",
+          "text": "Por que, há 35 anos, sobrevoar o Atlântico?",
+          "audio_start": 102.04,
+          "audio_end": 105.5,
+          "time_stretch": 1.0
+        },
+        {
+          "id": 19,
+          "start": 105.7,
+          "end": 107.54,
+          "source_text": "Why does Rice play Texas?",
+          "text": "Por que Rice contra o Texas?",
+          "audio_start": 105.7,
+          "audio_end": 107.82,
+          "time_stretch": 1.279
+        },
+        {
+          "id": 20,
+          "start": 107.92,
+          "end": 109.78,
+          "source_text": "We choose to go to the moon.",
+          "text": "Nós escolhemos ir à Lua.",
+          "audio_start": 107.92,
+          "audio_end": 109.52,
+          "time_stretch": 1.0
+        },
+        {
+          "id": 21,
+          "start": 110.48,
+          "end": 112.4,
+          "source_text": "We choose to go to the moon.",
+          "text": "Nós escolhemos ir à Lua.",
+          "audio_start": 110.48,
+          "audio_end": 112.67,
+          "time_stretch": 1.0
+        },
+        {
+          "id": 22,
+          "start": 118.32,
+          "end": 122.7,
+          "source_text": "We choose to go to the moon in this decade and do the other things,",
+          "text": "Nós escolhemos ir à Lua nesta década e fazer as outras coisas,",
+          "audio_start": 118.32,
+          "audio_end": 122.91,
+          "time_stretch": 1.148
+        },
+        {
+          "id": 23,
+          "start": 123.0,
+          "end": 126.4,
+          "source_text": "not because they are easy, but because they are hard.",
+          "text": "não porque sejam fáceis, mas porque são difíceis.",
+          "audio_start": 123.0,
+          "audio_end": 126.78,
+          "time_stretch": 1.124
+        },
+        {
+          "id": 24,
+          "start": 126.88,
+          "end": 133.74,
+          "source_text": "Because that goal will serve to organize and measure the best of our energies and skills.",
+          "text": "Porque essa meta servirá para organizar e medir o melhor de nossas energias e habilidades.",
+          "audio_start": 126.88,
+          "audio_end": 133.14,
+          "time_stretch": 1.0
+        },
+        {
+          "id": 25,
+          "start": 134.14,
+          "end": 137.68,
+          "source_text": "Because that challenge is one that we're willing to accept,",
+          "text": "Porque esse é um desafio que estamos dispostos a aceitar,",
+          "audio_start": 134.14,
+          "audio_end": 138.16,
+          "time_stretch": 1.0
+        },
+        {
+          "id": 26,
+          "start": 138.45,
+          "end": 143.8,
+          "source_text": "one we are unwilling to postpone, and one we intend to win, and the others too.",
+          "text": "um que não queremos adiar e que pretendemos vencer, assim como os outros.",
+          "audio_start": 138.45,
+          "audio_end": 143.99,
+          "time_stretch": 1.0
+        }
+      ]
+    }
+  ],
+  "playback_notes": "Each translated segment starts at the source segment's start time (audio_start = start). Translated tracks have the same duration as the source, so all three can be played in lockstep from one clock. time_stretch > 1 means the TTS for that segment was sped up to fit before the next segment starts."
+}

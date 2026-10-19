@@ -42,7 +42,7 @@ export type ListenerDisplay =
   | "ended"
   | "unavailable";
 
-export type ListenerTone = "live" | "warn" | "standby" | "off" | "error";
+export type ListenerTone = "live" | "warn" | "standby" | "off" | "error" | "replay";
 
 export type ListenerHealthInput = {
   connection: ListenerConnection;

@@ -69,6 +69,8 @@ export type ListenerSurfaceProps = {
   footer?: ReactNode;
   /** A notice above the controls, e.g. blocked autoplay. */
   notice?: string | null;
+  /** A standing label under the header, e.g. what a replay is. */
+  badge?: string | null;
 };
 
 const TALLY_CLASS: Record<ListenerTone, string> = {
@@ -77,6 +79,7 @@ const TALLY_CLASS: Record<ListenerTone, string> = {
   standby: "border-dashed border-line-strong text-silk",
   off: "border-line-strong text-silk",
   error: "bg-error-wash text-error-ink border-error-ink",
+  replay: "bg-primary text-on-primary border-primary",
 };
 
 const DOT_CLASS: Record<ListenerTone, string> = {
@@ -85,7 +88,13 @@ const DOT_CLASS: Record<ListenerTone, string> = {
   standby: "bg-dim",
   off: "bg-dim",
   error: "bg-error-ink",
+  replay: "bg-green",
 };
+
+/** The incoming level is worth showing (live audio or a recording playing). */
+function signalTone(tone: ListenerTone): boolean {
+  return tone === "live" || tone === "replay";
+}
 
 const SIZES: Record<TextSize, { old: number; cur: number; rOld: number; rCur: number }> = {
   m: { old: 22, cur: 28, rOld: 18, rCur: 23 },
@@ -109,6 +118,11 @@ export function ListenerSurface(props: ListenerSurfaceProps) {
       lang={props.uiLang}
     >
       <ListenerHeader {...props} />
+      {props.badge ? (
+        <p className="rounded-md border border-line-strong px-3 py-2 text-[15px] font-medium text-ink" data-testid="listener-badge">
+          {props.badge}
+        </p>
+      ) : null}
       <div className="flex items-center gap-2">
         <Segmented
           label={t.view}
@@ -198,13 +212,19 @@ function StatusAnnouncer({ t, status, statusDetail }: ListenerSurfaceProps) {
 }
 
 function delayText(t: ListenerStrings, s: number | null | undefined, tone: ListenerTone) {
-  if (tone !== "live") return t.noSignal;
+  if (!signalTone(tone)) return t.noSignal;
   if (s == null) return "";
   return t.delay(s.toFixed(1));
 }
 
 function showsStatusMessage(status: ListenerStatusKey) {
-  return status !== "live" && status !== "replay-playing" && status !== "idle";
+  return (
+    status !== "live" &&
+    status !== "idle" &&
+    status !== "replay-playing" &&
+    status !== "replay-paused" &&
+    status !== "replay-loading"
+  );
 }
 
 function ReceiverBody(props: ListenerSurfaceProps & { size: TextSize }) {
@@ -244,7 +264,7 @@ function ReceiverBody(props: ListenerSurfaceProps & { size: TextSize }) {
           {channel.label}
         </p>
         <div className="mt-5">
-          <HMeter level={tone === "live" ? level : null} label={t.audioLevel} testId="listener-meter" />
+          <HMeter level={signalTone(tone) ? level : null} label={t.audioLevel} testId="listener-meter" />
           <div className="mt-2 flex justify-between gap-2 text-[15px] text-silk">
             <span>{t.audioLevel}</span>
             <span className="tabular">{delayText(t, props.delaySeconds, tone)}</span>
@@ -466,7 +486,7 @@ function CaptionsBody(props: ListenerSurfaceProps & { size: TextSize }) {
               <span className="tabular text-silk">· {t.delay(props.delaySeconds.toFixed(1)).toLowerCase()}</span>
             ) : null}
           </p>
-          <MiniLevel level={tone === "live" ? level : null} label={t.audioLevel} />
+          <MiniLevel level={signalTone(tone) ? level : null} label={t.audioLevel} />
         </div>
       )}
     </>
