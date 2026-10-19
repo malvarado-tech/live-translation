@@ -184,7 +184,6 @@ export default function OperatorReplayPage() {
     stats: [
       { label: "Voice", value: c.original ? "Speaker" : "AI-generated", tone: "dim" },
       { label: "Listeners", value: "Replay", tone: "dim" },
-      { label: "Position", value: clock(t) },
     ],
     meta: c.original ? "Speaker audio · recorded" : "Translated voice · AI-generated · recorded",
     actions: (
@@ -211,7 +210,6 @@ export default function OperatorReplayPage() {
           stats: [
             { label: "Source", value: "Recording" },
             { label: "Language", value: "English" },
-            { label: "Position", value: clock(t) },
           ],
           meta: "Recorded speech, public domain",
         },

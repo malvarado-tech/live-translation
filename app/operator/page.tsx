@@ -839,7 +839,7 @@ export default function OperatorPage({
     stats: [
       { label: "Response", value: responseText, tone: mode === "original" || latencyMs == null ? "dim" : undefined },
       { label: "Listeners", value: LIVEKIT_ENABLED ? String(participantCount) : "No room" },
-      { label: "On air", value: session.liveSince ? clockOf(onAirMs) : "Off", tone: session.liveSince ? undefined : "dim" },
+      { label: "Air time", value: session.liveSince ? clockOf(onAirMs) : "Off", tone: session.liveSince ? undefined : "dim" },
     ],
     meta: [
       LIVEKIT_ENABLED ? `${participantCount} listening` : "No room server",
@@ -859,15 +859,6 @@ export default function OperatorPage({
         >
           {monitor === "program" ? "Monitoring" : "Monitor"}
         </Button>
-        {view.canStop ? (
-          <Button size="sm" onClick={() => void handleStop()}>
-            {session.hasRoom ? "Pause" : "Stop"}
-          </Button>
-        ) : view.canStart ? (
-          <Button size="sm" onClick={() => void handleStart()}>
-            Start
-          </Button>
-        ) : null}
       </>
     ),
   };
@@ -895,15 +886,15 @@ export default function OperatorPage({
       lang: r.code,
       tally,
       level: null,
-      levelNote: "Level metered in its own tab",
+      levelNote: "Other tab",
       stats: [
         { label: "Response", value: original ? "Original audio" : secs(r.status?.responseMs) ?? "Not reported", tone: "dim" },
         { label: "Listeners", value: String(r.status?.listeners ?? 0) },
-        { label: "On air", value: since ? clockOf(now - since) : "Off", tone: since ? undefined : "dim" },
+        { label: "Air time", value: since ? clockOf(now - since) : "Off", tone: since ? undefined : "dim" },
       ],
-      meta: `${r.status?.listeners ?? 0} listening${r.status?.responseMs ? ` · ${secs(r.status.responseMs)} response` : ""} · other tab`,
+      meta: `${r.status?.listeners ?? 0} listening${r.status?.responseMs ? ` · ${secs(r.status.responseMs)} response` : ""}`,
       fault: st === "reconnecting" || st === "interrupted",
-      source: "Room server, refreshed every 5 s",
+      source: "Other languages: status from the room server, refreshed every 5 s; each level is metered in its own operator tab.",
       actions: (
         <a
           href={`/listen/${encodeURIComponent(r.room)}`}
@@ -984,9 +975,7 @@ export default function OperatorPage({
       LIVEKIT_ENABLED && session.hasRoom && eventUrl
         ? {
             url: eventUrl,
-            caption: `One code for every language of this event${
-              remoteOthers.length ? ` (${[targetLanguage, ...remoteOthers.map((r) => r.code)].map((c) => c.toUpperCase()).join(", ")})` : ""
-            }`,
+            caption: "One code for every language of this event",
             actions: (
               <>
                 <Button size="sm" onClick={() => void copy("event")}>

@@ -9,9 +9,10 @@
  *    monitored transcript at reading size.
  */
 import { QRCodeSVG } from "qrcode.react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Button,
+  buttonClass,
   HMeter,
   Kbd,
   Segmented,
@@ -37,7 +38,7 @@ export type StripModel = {
   meta: string;
   fault?: boolean;
   actions?: ReactNode;
-  /** Where the data comes from, e.g. "Room server, every 5 s". */
+  /** Where the data comes from; shown once per view, not per strip. */
   source?: string;
   lang?: string;
 };
@@ -93,8 +94,6 @@ export type SessionBarProps = {
 };
 
 export function SessionBar({ tally, clock, title, subtitle, figures, actions }: SessionBarProps) {
-  const [view, setView] = useOperatorView();
-  const [theme, setTheme] = useTheme();
   return (
     <header className="border-b border-line bg-panel" data-testid="session-bar">
       <div className="mx-auto flex max-w-[1600px] flex-wrap items-center gap-x-6 gap-y-3 px-4 py-3">
@@ -125,10 +124,72 @@ export function SessionBar({ tally, clock, title, subtitle, figures, actions }: 
           ))}
         </dl>
         <div className="ml-auto flex flex-wrap items-center gap-2">
+          {actions}
+          <SettingsMenu />
+        </div>
+      </div>
+    </header>
+  );
+}
+
+/** View and theme, behind one Settings button at the end of the bar. */
+function SettingsMenu() {
+  const [view, setView] = useOperatorView();
+  const [theme, setTheme] = useTheme();
+  const [open, setOpen] = useState(false);
+  const wrap = useRef<HTMLDivElement | null>(null);
+  const button = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setOpen(false);
+        button.current?.focus();
+      }
+    };
+    const onDown = (e: PointerEvent) => {
+      if (wrap.current && !wrap.current.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", onDown);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", onDown);
+    };
+  }, [open]);
+
+  return (
+    <div className="relative" ref={wrap}>
+      <button
+        ref={button}
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        aria-controls="operator-settings"
+        data-testid="settings-button"
+        className={`${buttonClass("ghost", "md")} ${open ? "bg-btn-hover" : ""}`}
+      >
+        <svg aria-hidden width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+          <path d="M2 4.5h8M14 4.5h2M2 13.5h3M9 13.5h7" />
+          <circle cx="12" cy="4.5" r="2" />
+          <circle cx="7" cy="13.5" r="2" />
+        </svg>
+        Settings
+      </button>
+      {open ? (
+        <div
+          id="operator-settings"
+          role="group"
+          aria-label="Settings"
+          data-testid="settings-menu"
+          className="absolute right-0 top-full z-40 mt-2 flex w-[min(280px,calc(100vw-32px))] flex-col gap-4 rounded-md border border-line bg-panel p-4 shadow-lg"
+        >
           <Segmented
             label="View"
             value={view}
             onChange={setView}
+            stretch
             options={[
               { value: "desk", label: "Desk" },
               { value: "rows", label: "Rows" },
@@ -139,16 +200,16 @@ export function SessionBar({ tally, clock, title, subtitle, figures, actions }: 
             label="Theme"
             value={theme}
             onChange={setTheme}
+            stretch
             options={[
               { value: "light", label: "Light" },
               { value: "night", label: "Night" },
             ]}
             testId="operator-theme-switch"
           />
-          {actions}
         </div>
-      </div>
-    </header>
+      ) : null}
+    </div>
   );
 }
 
@@ -367,7 +428,6 @@ function DeskStrip({ strip, kind }: { strip: StripModel; kind: "input" | "channe
           {strip.levelNote ? <p className="text-xs text-silk">{strip.levelNote}</p> : null}
         </div>
       </div>
-      {strip.source ? <p className="text-xs text-silk">{strip.source}</p> : null}
       {strip.actions ? <div className="flex flex-wrap gap-2">{strip.actions}</div> : null}
     </section>
   );
@@ -412,6 +472,12 @@ function RowsRow({ strip, kind }: { strip: StripModel; kind: "input" | "channel"
       ) : null}
     </div>
   );
+}
+
+/** The data-source note shared by strips, shown once. */
+function SourceNote({ channels }: { channels: StripModel[] }) {
+  const note = channels.find((c) => c.source)?.source;
+  return note ? <p className="text-sm text-silk" data-testid="source-note">{note}</p> : null;
 }
 
 function ListenersSee({ items }: { items: ListenerPreview[] }) {
@@ -474,6 +540,7 @@ export function DeskView({ model }: { model: OperatorModel }) {
         ) : null}
         {model.qr ? <QrCard qr={model.qr} /> : null}
       </div>
+      <SourceNote channels={model.channels} />
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         {model.source ? <TranscriptLane model={model.source} testId="lane-source" /> : null}
         {model.target ? <TranscriptLane model={model.target} testId="lane-target" /> : null}
@@ -498,6 +565,7 @@ export function RowsView({ model }: { model: OperatorModel }) {
             <div className="flex flex-wrap items-center gap-3 px-4 py-3">{model.addLanguage}</div>
           ) : null}
         </div>
+        <SourceNote channels={model.channels} />
         <ListenersSee items={model.listenersSee} />
         {model.qr ? <QrCard qr={model.qr} compact /> : null}
       </div>
