@@ -82,7 +82,7 @@
         "synthetic": true
       },
       "translation": {
-        "method": "Machine translation drafted by Claude (AI model), lightly edited to fit segment timing; not reviewed by a professional translator",
+        "method": "Machine translation drafted with an AI model, lightly edited to fit segment timing; not reviewed by a professional translator",
         "register": "neutral Mexican Spanish"
       },
       "segments": [
@@ -364,7 +364,7 @@
         "synthetic": true
       },
       "translation": {
-        "method": "Machine translation drafted by Claude (AI model), lightly edited to fit segment timing; not reviewed by a professional translator",
+        "method": "Machine translation drafted with an AI model, lightly edited to fit segment timing; not reviewed by a professional translator",
         "register": "Brazilian Portuguese"
       },
       "segments": [
