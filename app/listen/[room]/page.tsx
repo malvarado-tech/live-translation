@@ -4,49 +4,66 @@ import {
   Room,
   RoomEvent,
   Track,
+  type Participant,
   type RemoteAudioTrack,
   type RemoteTrack,
-  type RemoteTrackPublication,
 } from "livekit-client";
-import Link from "next/link";
 import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ListenerSurface, type ListenerChannel } from "@/components/listener/surface";
+import { appendCaption, captionLines, emptyCaptions } from "@/lib/captions";
 import { slugify } from "@/lib/event-rooms";
+import { languageLabel, languageOfRoomName } from "@/lib/languages";
+import {
+  classifyDisconnect,
+  deriveListenerDisplay,
+  listenerTone,
+  REJOIN_DELAYS_MS,
+  type ListenerConnection,
+  type OperatorSignal,
+} from "@/lib/listener-health";
+import { LISTENER_STRINGS, uiLangForRoom } from "@/lib/listener-strings";
 import { CAPTION_TOPIC, type CaptionMessage } from "@/lib/livekit-publisher";
+import { useUiLang } from "@/lib/prefs";
+import { parseOperatorStatus, STATUS_ATTR } from "@/lib/session-status";
+import { primeAudio, useAudioLevel } from "@/lib/use-audio-level";
+import { useMediaSession, useWakeLock } from "@/lib/use-device-session";
 
-type ListenerStatus =
-  | "idle"
-  | "fetching-token"
-  | "connecting"
-  | "waiting-for-audio"
-  | "playing"
-  | "ended"
-  | "error";
+type TokenResponse = { token?: string; url?: string; error?: string };
 
-type TokenResponse = {
-  token?: string;
-  url?: string;
-  error?: string;
+type EventLanguage = {
+  code: string;
+  label: string;
+  room: string;
+  status?: { state?: string | null; mode?: string | null };
 };
 
-const STATUS_LABEL: Record<ListenerStatus, string> = {
-  idle: "Tap Listen to start",
-  "fetching-token": "Connecting…",
-  connecting: "Joining room…",
-  "waiting-for-audio": "Waiting for the speaker…",
-  playing: "Live",
-  ended: "Session ended",
-  error: "Error",
+type OperatorInfo = {
+  present: boolean;
+  seen: boolean;
+  state: OperatorSignal | null;
+  title: string | null;
+  mode: "translate" | "original" | null;
+  responseMs: number | null;
 };
 
-const STATUS_DOT_CLASS: Record<ListenerStatus, string> = {
-  idle: "bg-zinc-400",
-  "fetching-token": "bg-amber-400 animate-pulse",
-  connecting: "bg-amber-400 animate-pulse",
-  "waiting-for-audio": "bg-amber-400 animate-pulse",
-  playing: "bg-emerald-500 animate-pulse",
-  ended: "bg-zinc-400",
-  error: "bg-rose-500",
+const NO_OPERATOR: OperatorInfo = {
+  present: false,
+  seen: false,
+  state: null,
+  title: null,
+  mode: null,
+  responseMs: null,
 };
+
+const CHANNEL_POLL_MS = 15_000;
+
+function isOperator(p: Participant): boolean {
+  return (
+    typeof p.attributes?.[STATUS_ATTR.state] === "string" ||
+    p.identity.startsWith("operator") ||
+    Boolean(p.permissions?.canPublish)
+  );
+}
 
 export default function ListenerPage({
   params,
@@ -58,288 +75,363 @@ export default function ListenerPage({
   const { room } = use(params);
   const { event: eventParam } = use(searchParams);
   // Set when the page was opened from the event page (/e/[event]); enables
-  // the "Change language" link back to it. Only honoured when the room
-  // belongs to that event.
+  // language switching. Only honoured when the room belongs to that event.
   const eventSlug = useMemo(() => {
     const slug = slugify(typeof eventParam === "string" ? eventParam : "");
     return slug && room.startsWith(`${slug}-`) ? slug : null;
   }, [eventParam, room]);
 
-  const [status, setStatus] = useState<ListenerStatus>("idle");
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const langCode = languageOfRoomName(room);
+  const [uiLang, setUiLang] = useUiLang(uiLangForRoom(langCode));
+  const t = LISTENER_STRINGS[uiLang];
+
+  const [connection, setConnection] = useState<ListenerConnection>("idle");
+  const [rejoinAttempt, setRejoinAttempt] = useState(0);
+  const [operator, setOperator] = useState<OperatorInfo>(NO_OPERATOR);
+  const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
   const [muted, setMuted] = useState(false);
-  const [volume, setVolume] = useState(1);
-  const [captions, setCaptions] = useState("");
-  const [showCaptions, setShowCaptions] = useState(true);
+  const [captions, setCaptions] = useState(emptyCaptions);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [channels, setChannels] = useState<EventLanguage[]>([]);
+  const [eventTitle, setEventTitle] = useState<string | null>(null);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const roomRef = useRef<Room | null>(null);
-  const captionScrollRef = useRef<HTMLDivElement | null>(null);
-  const captionDecoder = useMemo(() => new TextDecoder(), []);
+  const leavingRef = useRef(false);
+  const rejoinTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const attemptRef = useRef(0);
+  const operatorSeenRef = useRef(false);
+  const lastOperatorStateRef = useRef<OperatorSignal | null>(null);
+  const connectRef = useRef<(rejoin: boolean) => Promise<void>>(async () => {});
+  const decoder = useMemo(() => new TextDecoder(), []);
 
-  const prettyRoom = useMemo(() => room, [room]);
+  const level = useAudioLevel(audioStream);
 
   useEffect(() => {
-    if (captionScrollRef.current) {
-      captionScrollRef.current.scrollTop =
-        captionScrollRef.current.scrollHeight;
-    }
-  }, [captions]);
+    document.documentElement.lang = uiLang;
+  }, [uiLang]);
 
-  const attachTrack = useCallback((track: RemoteTrack) => {
-    if (!audioRef.current) return;
-    if (track.kind !== Track.Kind.Audio) return;
-    (track as RemoteAudioTrack).attach(audioRef.current);
-    setStatus("playing");
-    setErrorMessage(null);
+  const readOperator = useCallback((lk: Room) => {
+    let found: Participant | null = null;
+    lk.remoteParticipants.forEach((p) => {
+      if (!found && isOperator(p)) found = p;
+    });
+    const p = found as Participant | null;
+    if (p) {
+      operatorSeenRef.current = true;
+      const st = parseOperatorStatus(p.attributes);
+      lastOperatorStateRef.current = st.state;
+      setOperator({
+        present: true,
+        seen: true,
+        state: st.state,
+        title: st.title,
+        mode: st.mode,
+        responseMs: st.responseMs,
+      });
+    } else {
+      setOperator((prev) => ({
+        ...prev,
+        present: false,
+        seen: operatorSeenRef.current,
+        state: lastOperatorStateRef.current === "ended" ? "ended" : prev.state,
+      }));
+    }
   }, []);
 
-  const handleStart = useCallback(async () => {
-    setErrorMessage(null);
-    setStatus("fetching-token");
+  const attachTrack = useCallback((track: RemoteTrack) => {
+    if (!audioRef.current || track.kind !== Track.Kind.Audio) return;
+    (track as RemoteAudioTrack).attach(audioRef.current);
+    setAudioStream(new MediaStream([track.mediaStreamTrack]));
+    audioRef.current.play().catch(() => {
+      setNotice("blocked");
+    });
+  }, []);
 
-    try {
-      const tokenResp = await fetch(
-        `/api/listen-token?room=${encodeURIComponent(room)}`,
-      );
-      const tokenData = (await tokenResp.json()) as TokenResponse;
-      if (!tokenResp.ok || !tokenData.token || !tokenData.url) {
-        throw new Error(tokenData.error ?? "Could not get a listener token.");
+  const clearRejoin = () => {
+    if (rejoinTimer.current) {
+      clearTimeout(rejoinTimer.current);
+      rejoinTimer.current = null;
+    }
+  };
+
+  const scheduleRejoin = useCallback(() => {
+    clearRejoin();
+    if (attemptRef.current >= REJOIN_DELAYS_MS.length) {
+      setConnection("unavailable");
+      return;
+    }
+    const delay = REJOIN_DELAYS_MS[attemptRef.current];
+    attemptRef.current += 1;
+    setRejoinAttempt(attemptRef.current);
+    setConnection("rejoining");
+    rejoinTimer.current = setTimeout(() => {
+      rejoinTimer.current = null;
+      void connectRef.current(true);
+    }, delay);
+  }, []);
+
+  const connect = useCallback(
+    async (rejoin: boolean) => {
+      leavingRef.current = false;
+      if (!rejoin) {
+        attemptRef.current = 0;
+        setRejoinAttempt(0);
+      }
+      setConnection(rejoin ? "rejoining" : "connecting");
+
+      let tokenData: TokenResponse;
+      try {
+        const resp = await fetch(`/api/listen-token?room=${encodeURIComponent(room)}`, {
+          cache: "no-store",
+        });
+        tokenData = (await resp.json().catch(() => ({}))) as TokenResponse;
+        if (!resp.ok || !tokenData.token || !tokenData.url) {
+          // A configuration problem on the server; retrying will not help.
+          // The listener sees a plain "unavailable", never the server text.
+          setConnection(rejoin ? "rejoining" : "unavailable");
+          if (rejoin) scheduleRejoin();
+          return;
+        }
+      } catch {
+        // Network down: keep trying.
+        scheduleRejoin();
+        return;
       }
 
-      const lkRoom = new Room({
-        adaptiveStream: true,
-        dynacast: false,
-      });
-
-      lkRoom
-        .on(RoomEvent.TrackSubscribed, (track) => attachTrack(track))
-        .on(
-          RoomEvent.TrackUnsubscribed,
-          (track: RemoteTrack, _pub: RemoteTrackPublication) => {
-            try {
-              if (track.kind === Track.Kind.Audio && audioRef.current) {
-                (track as RemoteAudioTrack).detach(audioRef.current);
-              }
-            } catch {
-              // ignore
-            }
-            setStatus("waiting-for-audio");
-          },
-        )
-        .on(RoomEvent.DataReceived, (payload, _participant, _kind, topic) => {
-          if (topic !== CAPTION_TOPIC) return;
+      const lk = new Room({ adaptiveStream: true, dynacast: false });
+      lk.on(RoomEvent.TrackSubscribed, (track) => attachTrack(track))
+        .on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => {
           try {
-            const msg = JSON.parse(captionDecoder.decode(payload)) as
-              | CaptionMessage
-              | undefined;
-            if (msg?.kind === "caption" && typeof msg.delta === "string") {
-              setCaptions((prev) => prev + msg.delta);
+            if (track.kind === Track.Kind.Audio && audioRef.current) {
+              (track as RemoteAudioTrack).detach(audioRef.current);
             }
           } catch {
-            // Malformed payload — ignore. Captions are best-effort.
+            // ignore
+          }
+          setAudioStream(null);
+        })
+        .on(RoomEvent.DataReceived, (payload, _p, _k, topic) => {
+          if (topic !== CAPTION_TOPIC) return;
+          try {
+            const msg = JSON.parse(decoder.decode(payload)) as CaptionMessage | undefined;
+            if (msg?.kind === "caption" && typeof msg.delta === "string") {
+              setCaptions((prev) => appendCaption(prev, msg.delta));
+            }
+          } catch {
+            // Malformed payload: captions are best-effort.
           }
         })
-        .on(RoomEvent.Disconnected, () => {
-          setStatus("ended");
-        });
-
-      setStatus("connecting");
-      await lkRoom.connect(tokenData.url, tokenData.token, {
-        autoSubscribe: true,
-      });
-      roomRef.current = lkRoom;
-
-      lkRoom.remoteParticipants.forEach((participant) => {
-        participant.trackPublications.forEach((pub) => {
-          if (pub.isSubscribed && pub.track) {
-            attachTrack(pub.track);
+        .on(RoomEvent.ParticipantConnected, () => readOperator(lk))
+        .on(RoomEvent.ParticipantDisconnected, () => readOperator(lk))
+        .on(RoomEvent.ParticipantAttributesChanged, () => readOperator(lk))
+        .on(RoomEvent.Reconnecting, () => setConnection("reconnecting"))
+        .on(RoomEvent.SignalReconnecting, () => setConnection("reconnecting"))
+        .on(RoomEvent.Reconnected, () => {
+          setConnection("connected");
+          readOperator(lk);
+        })
+        .on(RoomEvent.Disconnected, (reason) => {
+          if (roomRef.current === lk) roomRef.current = null;
+          setAudioStream(null);
+          if (leavingRef.current) {
+            setConnection("left");
+            return;
+          }
+          const kind = classifyDisconnect(reason as number | undefined);
+          if (kind === "room-gone" || kind === "removed") {
+            setConnection("ended");
+          } else {
+            // Network trouble or anything unexplained: rejoin, never "ended".
+            scheduleRejoin();
           }
         });
-      });
 
-      setStatus((current) =>
-        current === "playing" ? current : "waiting-for-audio",
-      );
-
-      if (audioRef.current) {
-        try {
-          // This play() is a *primer* — it runs inside the user-gesture context
-          // so that when LiveKit later attaches a real track via track.attach()
-          // it can play without a second tap (iOS Safari requirement).
-          await audioRef.current.play();
-        } catch (err) {
-          // If there's no srcObject yet, the rejection is expected (nothing to
-          // play; the primer still unlocked the element). Only surface the
-          // "tap to unmute" hint when there's actually a source the browser
-          // refused to play.
-          if (audioRef.current.srcObject) {
-            setErrorMessage(
-              `Tap the screen to unmute audio. (${(err as Error).message})`,
-            );
-          }
-        }
+      try {
+        await lk.connect(tokenData.url!, tokenData.token!, { autoSubscribe: true });
+      } catch {
+        scheduleRejoin();
+        return;
       }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setErrorMessage(message);
-      setStatus("error");
-    }
-  }, [room, attachTrack]);
+      if (leavingRef.current) {
+        void lk.disconnect();
+        return;
+      }
+      roomRef.current = lk;
+      attemptRef.current = 0;
+      setRejoinAttempt(0);
+      setConnection("connected");
+      readOperator(lk);
+      lk.remoteParticipants.forEach((participant) => {
+        participant.trackPublications.forEach((pub) => {
+          if (pub.isSubscribed && pub.track) attachTrack(pub.track);
+        });
+      });
+    },
+    [room, attachTrack, decoder, readOperator, scheduleRejoin],
+  );
 
-  const handleStop = useCallback(async () => {
-    try {
-      await roomRef.current?.disconnect();
-    } finally {
-      roomRef.current = null;
-      setStatus("ended");
-    }
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
+
+  const handleListen = useCallback(() => {
+    setNotice(null);
+    primeAudio();
+    // Prime the element inside the tap so later track attachment can play
+    // without another tap (iOS Safari).
+    audioRef.current?.play().catch(() => {});
+    if (roomRef.current) return;
+    clearRejoin();
+    void connect(false);
+  }, [connect]);
+
+  const handleLeave = useCallback(() => {
+    leavingRef.current = true;
+    clearRejoin();
+    const lk = roomRef.current;
+    roomRef.current = null;
+    setAudioStream(null);
+    if (lk) void lk.disconnect();
+    setConnection("left");
+  }, []);
+
+  // Network back: try right away instead of waiting for the next backoff.
+  useEffect(() => {
+    const onOnline = () => {
+      if (rejoinTimer.current) {
+        clearRejoin();
+        void connectRef.current(true);
+      }
+    };
+    window.addEventListener("online", onOnline);
+    return () => window.removeEventListener("online", onOnline);
   }, []);
 
   useEffect(() => {
     return () => {
+      leavingRef.current = true;
+      clearRejoin();
       void roomRef.current?.disconnect();
       roomRef.current = null;
     };
   }, []);
 
   useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.muted = muted;
-      audioRef.current.volume = volume;
-    }
-  }, [muted, volume]);
+    if (audioRef.current) audioRef.current.muted = muted;
+  }, [muted]);
 
-  const showStart = status === "idle" || status === "ended" || status === "error";
+  // Other languages of the event, for the channel buttons.
+  useEffect(() => {
+    if (!eventSlug) return;
+    let stopped = false;
+    const load = async () => {
+      try {
+        const resp = await fetch(`/api/event-languages?event=${encodeURIComponent(eventSlug)}`, {
+          cache: "no-store",
+        });
+        if (!resp.ok) return;
+        const data = (await resp.json()) as { languages?: EventLanguage[]; title?: string | null };
+        if (stopped) return;
+        if (Array.isArray(data.languages)) setChannels(data.languages);
+        if (typeof data.title === "string") setEventTitle(data.title);
+      } catch {
+        // keep the last list
+      }
+    };
+    const first = setTimeout(() => void load(), 0);
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible") void load();
+    }, CHANNEL_POLL_MS);
+    return () => {
+      stopped = true;
+      clearTimeout(first);
+      clearInterval(timer);
+    };
+  }, [eventSlug]);
+
+  const display = deriveListenerDisplay({
+    connection,
+    operatorPresent: operator.present,
+    operatorSeen: operator.seen,
+    operatorState: operator.state,
+    hasAudio: audioStream !== null,
+    silentMs: level.active ? level.silentMs : 0,
+  });
+  const tone = listenerTone(display);
+
+  const channelList: ListenerChannel[] = useMemo(() => {
+    if (!eventSlug) return [];
+    const list = channels.some((c) => c.room === room)
+      ? channels
+      : [...channels, { code: langCode ?? "", label: languageLabel(langCode ?? ""), room }];
+    return list.map((c, i) => ({
+      code: c.code,
+      label: c.label,
+      lang: c.code,
+      number: i + 1,
+      active: c.room === room,
+      href: `/listen/${encodeURIComponent(c.room)}?event=${encodeURIComponent(eventSlug)}`,
+    }));
+  }, [channels, eventSlug, room, langCode]);
+
+  const channelNumber = channelList.find((c) => c.active)?.number ?? null;
+  const title = operator.title ?? eventTitle ?? t.liveTranslation;
+  const label = langCode ? languageLabel(langCode) : t.liveTranslation;
+  const connected = connection === "connected" || connection === "reconnecting" || connection === "rejoining";
+
+  useWakeLock(connected);
+  useMediaSession(
+    connected
+      ? {
+          title: `${label} · ${title}`,
+          artist: t.liveTranslation,
+          playing: !muted,
+          onPlay: () => setMuted(false),
+          onPause: () => setMuted(true),
+        }
+      : null,
+  );
+
+  const lines = useMemo(() => captionLines(captions), [captions]);
 
   return (
-    <div className="flex flex-1 flex-col items-center justify-center bg-zinc-50 px-6 py-10 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
-      <main className="flex w-full max-w-md flex-col gap-6 rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-        <header className="flex flex-col gap-1 text-center">
-          <p className="text-xs font-medium uppercase tracking-[0.2em] text-emerald-700 dark:text-emerald-400">
-            Listener
-          </p>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Live translation
-          </h1>
-          <p className="font-mono text-xs text-zinc-500 dark:text-zinc-400">
-            room: {prettyRoom}
-          </p>
-          {eventSlug ? (
-            <Link
-              href={`/e/${encodeURIComponent(eventSlug)}`}
-              className="mt-1 text-sm font-medium text-emerald-700 underline-offset-4 hover:underline dark:text-emerald-400"
-            >
-              Change language
-            </Link>
-          ) : null}
-        </header>
-
-        <div className="flex items-center justify-center gap-2 text-sm font-medium">
-          <span
-            className={`inline-block h-2.5 w-2.5 rounded-full ${STATUS_DOT_CLASS[status]}`}
-            aria-hidden
-          />
-          <span>{STATUS_LABEL[status]}</span>
-        </div>
-
-        {errorMessage ? (
-          <div className="rounded-md border border-rose-300 bg-rose-50 p-3 text-sm text-rose-900 dark:border-rose-800 dark:bg-rose-950 dark:text-rose-200">
-            {errorMessage}
-          </div>
-        ) : null}
-
-        {showStart ? (
-          <button
-            type="button"
-            onClick={handleStart}
-            className="flex h-14 w-full items-center justify-center rounded-xl bg-emerald-600 text-base font-semibold text-white shadow-sm transition hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 dark:focus:ring-offset-zinc-900"
-          >
-            Listen
-          </button>
-        ) : (
-          <>
-            <button
-              type="button"
-              onClick={handleStop}
-              className="flex h-12 w-full items-center justify-center rounded-xl bg-zinc-200 text-sm font-medium text-zinc-900 transition hover:bg-zinc-300 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700"
-            >
-              Disconnect
-            </button>
-
-            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={muted}
-                  onChange={(e) => setMuted(e.target.checked)}
-                  className="h-4 w-4 rounded border-zinc-300 text-emerald-600 focus:ring-emerald-500"
-                />
-                <span>Mute</span>
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={showCaptions}
-                  onChange={(e) => setShowCaptions(e.target.checked)}
-                  className="h-4 w-4 rounded border-zinc-300 text-emerald-600 focus:ring-emerald-500"
-                />
-                <span>Captions</span>
-              </label>
-              <div className="flex min-w-40 flex-1 items-center gap-2 text-sm">
-                <span className="text-xs text-zinc-500 dark:text-zinc-400">
-                  Vol
-                </span>
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.05}
-                  value={volume}
-                  onChange={(e) => setVolume(Number(e.target.value))}
-                  className="min-w-0 flex-1 accent-emerald-600"
-                />
-              </div>
-            </div>
-
-            {showCaptions ? (
-              <div className="flex flex-col gap-1.5">
-                <div className="flex items-center justify-between text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-                  <span>Captions</span>
-                  {captions ? (
-                    <button
-                      type="button"
-                      onClick={() => setCaptions("")}
-                      className="text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
-                    >
-                      Clear
-                    </button>
-                  ) : null}
-                </div>
-                <div
-                  ref={captionScrollRef}
-                  className="h-44 overflow-y-auto rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm leading-relaxed text-zinc-900 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100"
-                >
-                  {captions ? (
-                    <span className="whitespace-pre-wrap">{captions}</span>
-                  ) : (
-                    <span className="text-zinc-400 dark:text-zinc-600">
-                      Waiting for translated text…
-                    </span>
-                  )}
-                </div>
-              </div>
-            ) : null}
-          </>
-        )}
-
-        <p className="text-center text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
-          Plug in your headphones, then tap Listen. iOS needs an explicit tap
-          before audio can start.
-        </p>
-      </main>
-
+    <>
+      <ListenerSurface
+        t={t}
+        uiLang={uiLang}
+        onUiLang={setUiLang}
+        title={title}
+        subtitle={operator.title || eventTitle ? t.liveTranslation : null}
+        channel={{
+          code: langCode ?? "--",
+          label: operator.mode === "original" ? `${label}, ${t.originalAudio}` : label,
+          number: channelNumber,
+          lang: langCode ?? uiLang,
+        }}
+        status={display}
+        tone={tone}
+        statusDetail={display === "network-reconnecting" && rejoinAttempt > 0 ? t.attempt(rejoinAttempt, REJOIN_DELAYS_MS.length) : null}
+        level={level.active ? level.level : null}
+        delaySeconds={operator.responseMs != null ? operator.responseMs / 1000 : null}
+        lines={lines}
+        captionsAvailable={operator.mode !== "original"}
+        channels={channelList}
+        primary={
+          connected && !notice
+            ? { kind: "mute", muted, onToggle: () => setMuted((m) => !m) }
+            : { kind: "listen", onClick: handleListen, busy: connection === "connecting" }
+        }
+        onLeave={connected ? handleLeave : null}
+        changeLanguageHref={eventSlug ? `/e/${encodeURIComponent(eventSlug)}` : null}
+        notice={notice ? t.audioBlocked : null}
+        footer={
+          connection === "idle" ? (
+            <p className="text-center text-[15px] text-silk">{t.headphones}</p>
+          ) : null
+        }
+      />
       <audio ref={audioRef} autoPlay playsInline />
-    </div>
+    </>
   );
 }

@@ -1,20 +1,65 @@
 "use client";
 
 import Link from "next/link";
-import { use, useCallback, useEffect, useRef, useState } from "react";
+import { use, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { buttonClass, Segmented, toggleClass } from "@/components/ui/controls";
 import { slugify, type LiveLanguage } from "@/lib/event-rooms";
+import {
+  LISTENER_STRINGS,
+  uiLangForBrowser,
+  type ListenerLang,
+  type ListenerStrings,
+} from "@/lib/listener-strings";
+import { useListenerView, useTheme, useUiLang } from "@/lib/prefs";
 
 const POLL_INTERVAL_MS = 15_000;
 
+type PickerLanguage = LiveLanguage & {
+  status?: {
+    state?: string | null;
+    mode?: string | null;
+    listeners?: number;
+  };
+};
+
 type LoadState =
   | { kind: "loading" }
-  | { kind: "ready"; languages: LiveLanguage[] }
-  | { kind: "error"; message: string; languages: LiveLanguage[] };
+  | { kind: "ready"; languages: PickerLanguage[] }
+  | { kind: "error"; languages: PickerLanguage[] };
 
 type EventLanguagesResponse = {
-  languages?: LiveLanguage[];
+  languages?: PickerLanguage[];
+  title?: string | null;
   error?: string;
 };
+
+const noop = () => () => {};
+
+function useBrowserLang(): ListenerLang {
+  return useSyncExternalStore(
+    noop,
+    () => uiLangForBrowser(navigator.languages ?? [navigator.language]),
+    () => "en",
+  );
+}
+
+function stateOf(lang: PickerLanguage, t: ListenerStrings): { text: string; live: boolean } {
+  const s = lang.status?.state;
+  if (lang.status?.mode === "original" && (s === "live" || !s)) {
+    return { text: t.channelStates.live, live: true };
+  }
+  switch (s) {
+    case "paused":
+      return { text: t.channelStates.paused, live: false };
+    case "waiting":
+      return { text: t.channelStates.waiting, live: false };
+    case "reconnecting":
+    case "interrupted":
+      return { text: t.channelStates.reconnecting, live: false };
+    default:
+      return { text: t.channelStates.live, live: true };
+  }
+}
 
 export default function EventPage({
   params,
@@ -24,9 +69,21 @@ export default function EventPage({
   const { event: rawEvent } = use(params);
   const event = slugify(decodeURIComponent(rawEvent));
 
+  const browserLang = useBrowserLang();
+  const [uiLang, setUiLang] = useUiLang(browserLang);
+  const t = LISTENER_STRINGS[uiLang];
+  const other = LISTENER_STRINGS[uiLang === "es" ? "en" : "es"];
+  const [view, setView] = useListenerView();
+  const [theme, setTheme] = useTheme();
+
   const [state, setState] = useState<LoadState>({ kind: "loading" });
+  const [title, setTitle] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const lastLanguages = useRef<LiveLanguage[]>([]);
+  const lastLanguages = useRef<PickerLanguage[]>([]);
+
+  useEffect(() => {
+    document.documentElement.lang = uiLang;
+  }, [uiLang]);
 
   const load = useCallback(async () => {
     if (!event) {
@@ -40,18 +97,14 @@ export default function EventPage({
         { cache: "no-store" },
       );
       const data = (await resp.json().catch(() => ({}))) as EventLanguagesResponse;
-      if (!resp.ok) {
-        throw new Error(data.error ?? "Could not load the languages.");
-      }
+      if (!resp.ok) throw new Error("lookup failed");
       const languages = Array.isArray(data.languages) ? data.languages : [];
       lastLanguages.current = languages;
+      if (typeof data.title === "string" && data.title) setTitle(data.title);
       setState({ kind: "ready", languages });
-    } catch (err) {
-      setState({
-        kind: "error",
-        message: err instanceof Error ? err.message : String(err),
-        languages: lastLanguages.current,
-      });
+    } catch {
+      // The listener never sees server messages; the last list stays.
+      setState({ kind: "error", languages: lastLanguages.current });
     } finally {
       setRefreshing(false);
     }
@@ -78,7 +131,6 @@ export default function EventPage({
         stop();
       }
     };
-    // First load on the next tick, through the same path as the timer.
     const first = setTimeout(() => void load(), 0);
     start();
     document.addEventListener("visibilitychange", onVisibility);
@@ -92,84 +144,157 @@ export default function EventPage({
   const languages = state.kind === "loading" ? [] : state.languages;
 
   return (
-    <div className="flex flex-1 flex-col items-center justify-center bg-zinc-50 px-6 py-10 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
-      <main className="flex w-full max-w-md flex-col gap-6 rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-        <header className="flex flex-col gap-1 text-center">
-          <p className="text-xs font-medium uppercase tracking-[0.2em] text-emerald-700 dark:text-emerald-400">
-            Listener
+    <div
+      className="mx-auto flex min-h-dvh w-full max-w-md flex-col gap-5 px-4 pb-[max(16px,env(safe-area-inset-bottom))] pt-4"
+      data-testid="picker"
+      data-view={view}
+      lang={uiLang}
+    >
+      <header className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          {title ? <p className="text-[15px] text-silk">{t.liveTranslation}</p> : null}
+          <p className="text-2xl font-semibold leading-tight text-ink [overflow-wrap:anywhere]">
+            {title ?? t.liveTranslation}
           </p>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Choose a language
-          </h1>
-          <p className="font-mono text-xs text-zinc-500 dark:text-zinc-400">
-            event: {event || "unknown"}
-          </p>
-        </header>
+        </div>
+        <button
+          type="button"
+          onClick={() => setUiLang(uiLang === "es" ? "en" : "es")}
+          lang={uiLang === "es" ? "en" : "es"}
+          aria-label={uiLang === "es" ? "Interface in English" : "Interfaz en español"}
+          title={t.interfaceLanguage}
+          data-testid="ui-lang-toggle"
+          className={`${buttonClass("ghost", "sm")} shrink-0 font-cond text-base tracking-wide`}
+        >
+          {uiLang === "es" ? "EN" : "ES"}
+        </button>
+      </header>
 
-        {state.kind === "error" ? (
-          <div
-            role="alert"
-            data-testid="languages-error"
-            className="rounded-md border border-rose-300 bg-rose-50 p-3 text-sm text-rose-900 dark:border-rose-800 dark:bg-rose-950 dark:text-rose-200"
-          >
-            {state.message}
-          </div>
-        ) : null}
+      <div className="flex items-center gap-2">
+        <Segmented
+          label={t.view}
+          value={view}
+          onChange={setView}
+          options={[
+            { value: "receiver", label: t.views.receiver },
+            { value: "captions", label: t.views.captions },
+          ]}
+          testId="listener-view-switch"
+          stretch
+          className="flex-1"
+        />
+        <button
+          type="button"
+          onClick={() => setTheme(theme === "night" ? "light" : "night")}
+          aria-pressed={theme === "night"}
+          data-testid="theme-toggle"
+          className={`inline-flex min-h-11 shrink-0 items-center rounded-md border px-3 text-sm font-semibold ${toggleClass(theme === "night")}`}
+        >
+          {t.themes.night}
+        </button>
+      </div>
 
-        {state.kind === "loading" ? (
-          <p
-            className="text-center text-sm text-zinc-500 dark:text-zinc-400"
-            data-testid="languages-loading"
-          >
-            Checking which languages are live…
-          </p>
-        ) : languages.length > 0 ? (
-          <ul className="flex flex-col gap-3" data-testid="language-list">
-            {languages.map((lang) => (
+      <div>
+        <h1 className="text-[34px] font-bold leading-tight text-ink">{t.languageSelection}</h1>
+        <p className="text-lg text-silk" lang={uiLang === "es" ? "en" : "es"}>
+          {other.languageSelection}
+        </p>
+      </div>
+
+      <p role="status" aria-live="polite" className="sr-only">
+        {state.kind === "loading"
+          ? t.checking
+          : languages.length === 0
+            ? t.noLiveLanguages
+            : languages.map((l) => l.label).join(", ")}
+      </p>
+
+      {state.kind === "error" ? (
+        <div
+          role="alert"
+          data-testid="languages-error"
+          className="rounded-md border border-amber bg-amber-wash px-4 py-3 text-base text-ink"
+        >
+          {t.pickerError}
+        </div>
+      ) : null}
+
+      {state.kind === "loading" ? (
+        <p className="text-lg text-silk" data-testid="languages-loading">
+          {t.checking}
+        </p>
+      ) : languages.length > 0 ? (
+        <ul className="flex flex-col gap-3" data-testid="language-list">
+          {languages.map((lang, i) => {
+            const st = stateOf(lang, t);
+            const href = `/listen/${encodeURIComponent(lang.room)}?event=${encodeURIComponent(event)}`;
+            return (
               <li key={lang.code}>
-                <Link
-                  href={`/listen/${encodeURIComponent(lang.room)}?event=${encodeURIComponent(event)}`}
-                  className="flex h-14 w-full items-center justify-between rounded-xl border border-zinc-200 bg-white px-5 text-base font-semibold shadow-sm transition hover:border-emerald-500 hover:bg-emerald-50 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-emerald-950 dark:focus:ring-offset-zinc-900"
-                >
-                  <span lang={lang.code}>{lang.label}</span>
-                  <span className="flex items-center gap-2 text-xs font-medium text-zinc-500 dark:text-zinc-400">
-                    <span
-                      className="inline-block h-2 w-2 rounded-full bg-emerald-500"
-                      aria-hidden
-                    />
-                    Live · {lang.code}
-                  </span>
-                </Link>
+                {view === "receiver" ? (
+                  <Link
+                    href={href}
+                    className="grid min-h-24 grid-cols-[28px_84px_1fr] items-center gap-2 rounded-lg border border-line bg-panel px-4 transition hover:bg-panel-2"
+                  >
+                    <span className="font-cond text-2xl text-silk" aria-hidden>
+                      {i + 1}
+                    </span>
+                    <span className="font-cond text-5xl font-bold text-ink" aria-hidden>
+                      {lang.code.toUpperCase()}
+                    </span>
+                    <span className="flex min-w-0 flex-col">
+                      <span className="text-xl font-semibold text-ink" lang={lang.code}>
+                        {lang.label}
+                      </span>
+                      <span className="flex items-center gap-2 text-lg text-silk">
+                        <span aria-hidden className={`h-3 w-3 rounded-full ${st.live ? "bg-onair" : "bg-dim"}`} />
+                        {st.text}
+                      </span>
+                    </span>
+                  </Link>
+                ) : (
+                  <Link
+                    href={href}
+                    className="flex min-h-20 items-center gap-3 rounded-2xl border border-line bg-panel px-4 transition hover:bg-panel-2"
+                  >
+                    <span className="rounded-full bg-primary px-2.5 py-0.5 font-cond text-lg font-bold text-on-primary" aria-hidden>
+                      {lang.code.toUpperCase()}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-2xl font-bold text-ink" lang={lang.code}>
+                      {lang.label}
+                    </span>
+                    <span className="flex shrink-0 items-center gap-2 text-lg text-ink">
+                      <span aria-hidden className={`h-3 w-3 rounded-full ${st.live ? "bg-green" : "bg-dim"}`} />
+                      {st.text}
+                    </span>
+                  </Link>
+                )}
               </li>
-            ))}
-          </ul>
-        ) : (
-          <div
-            className="flex flex-col gap-1 rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-5 text-center dark:border-zinc-800 dark:bg-zinc-950"
-            data-testid="no-live-languages"
-          >
-            <p className="text-sm font-medium">No live languages right now.</p>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">
-              Languages appear here as soon as they go live. This page checks
-              again every 15 seconds.
-            </p>
-          </div>
-        )}
+            );
+          })}
+        </ul>
+      ) : (
+        <div
+          className="flex flex-col gap-1 rounded-lg border border-dashed border-line-strong px-4 py-5"
+          data-testid="no-live-languages"
+        >
+          <p className="text-xl font-semibold text-ink">{t.noLiveLanguages}</p>
+          <p className="text-base text-silk">{t.noLiveLanguagesDetail}</p>
+        </div>
+      )}
 
+      <div className="mt-auto flex flex-col gap-3">
+        <p className="rounded-lg border border-line bg-panel px-4 py-3 text-base text-silk">
+          {t.headphones}
+        </p>
         <button
           type="button"
           onClick={() => void load()}
           disabled={refreshing}
-          className="flex h-11 w-full items-center justify-center rounded-xl bg-zinc-200 text-sm font-medium text-zinc-900 transition hover:bg-zinc-300 disabled:opacity-60 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700"
+          className={`${buttonClass("default", "lg")} w-full`}
         >
-          {refreshing ? "Checking…" : "Refresh"}
+          {refreshing ? t.refreshing : t.refresh}
         </button>
-
-        <p className="text-center text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
-          Pick a language, then tap Listen. You can come back here to switch
-          languages at any time.
-        </p>
-      </main>
+      </div>
     </div>
   );
 }
