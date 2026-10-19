@@ -510,7 +510,7 @@ function MiniLevel({ level, label }: { level: number | null; label: string }) {
       {bars.map((b, i) => (
         <i
           key={i}
-          className={`block w-[4px] rounded-full ${l > 0.05 ? "bg-green" : "bg-off"}`}
+          className={`block w-[4px] rounded-full ${l > 0.05 ? "bg-meter-green" : "bg-off"}`}
           style={{ height: `${Math.max(6, Math.round(32 * Math.min(1, b * (0.35 + l * 1.3))))}px` }}
         />
       ))}

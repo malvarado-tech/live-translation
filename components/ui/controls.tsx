@@ -150,7 +150,7 @@ export function Kbd({ children }: { children: ReactNode }) {
 }
 
 function segColor(f: number): string {
-  return f > 0.9 ? "bg-onair" : f > 0.72 ? "bg-amber" : "bg-green";
+  return f > 0.9 ? "bg-meter-red" : f > 0.72 ? "bg-meter-amber" : "bg-meter-green";
 }
 
 function clamp01(v: number): number {

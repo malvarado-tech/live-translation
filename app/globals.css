@@ -32,6 +32,9 @@
   --error-ink: #a3241a;
   --error-wash: #fde8e5;
   --off: #ccd3d9;
+  --meter-green: #157a43;
+  --meter-amber: #9c6400;
+  --meter-red: #c42b1f;
   --btn: #e6eaed;
   --btn-hover: #dae0e5;
   --btn-line: #b5bec7;
@@ -64,6 +67,9 @@
   --error-ink: #ff8a80;
   --error-wash: #3a1916;
   --off: #2a323b;
+  --meter-green: #46d884;
+  --meter-amber: #ffb627;
+  --meter-red: #ff5a4e;
   --btn: #2c343d;
   --btn-hover: #353e48;
   --btn-line: #3a444f;
@@ -95,6 +101,9 @@
   --color-error-ink: var(--error-ink);
   --color-error-wash: var(--error-wash);
   --color-off: var(--off);
+  --color-meter-green: var(--meter-green);
+  --color-meter-amber: var(--meter-amber);
+  --color-meter-red: var(--meter-red);
   --color-btn: var(--btn);
   --color-btn-hover: var(--btn-hover);
   --color-btn-line: var(--btn-line);
