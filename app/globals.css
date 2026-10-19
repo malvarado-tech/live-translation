@@ -4,78 +4,81 @@
  * Two themes share one structure. Light is the default; Night is the
  * low-glare option for dark rooms. The attribute is set on <html> before
  * first paint by the inline script in app/layout.tsx.
+ *
+ * Palette "Andén": white, black and one route blue, with channel lights
+ * (red, yellow, green) taken from a transit route-colour system.
  */
 @custom-variant dark (&:where([data-theme="night"], [data-theme="night"] *));
 
 :root,
 :root[data-theme="light"] {
   color-scheme: light;
-  --bg: #eceeea;
+  --bg: #edf0f4;
   --panel: #ffffff;
-  --panel-2: #f4f5f2;
-  --well: #e2e6e9;
-  --line: #c9d0d6;
-  --line-strong: #7d8893;
-  --ink: #111519;
-  --silk: #36404a;
-  --dim: #4f5a65;
-  --onair: #c42b1f;
+  --panel-2: #f4f6f9;
+  --well: #e3e7ec;
+  --line: #d0d6de;
+  --line-strong: #6b7480;
+  --ink: #0a0c10;
+  --silk: #30363f;
+  --dim: #49515c;
+  --onair: #d0202a;
   --on-onair: #ffffff;
-  --amber: #f5b82e;
-  --on-amber: #241700;
-  --amber-ink: #744b00;
-  --amber-wash: #fff3d1;
-  --green: #1e9e57;
-  --green-ink: #0d6633;
-  --green-wash: #e1f4e8;
-  --green-line: #5fb383;
-  --error-ink: #a3241a;
-  --error-wash: #fde8e5;
-  --off: #ccd3d9;
-  --meter-green: #157a43;
-  --meter-amber: #9c6400;
-  --meter-red: #c42b1f;
-  --btn: #e6eaed;
-  --btn-hover: #dae0e5;
-  --btn-line: #b5bec7;
-  --primary: #14181d;
+  --amber: #fccc0a;
+  --on-amber: #1a1400;
+  --amber-ink: #765200;
+  --amber-wash: #fff5c4;
+  --green: #00933c;
+  --green-ink: #00692b;
+  --green-wash: #e0f2e6;
+  --green-line: #4aad72;
+  --error-ink: #b0141d;
+  --error-wash: #fde6e7;
+  --off: #cdd3db;
+  --meter-green: #00843a;
+  --meter-amber: #a06e00;
+  --meter-red: #d0202a;
+  --btn: #e7ebf0;
+  --btn-hover: #dbe0e7;
+  --btn-line: #aab3be;
+  --primary: #0039a6;
   --on-primary: #ffffff;
-  --focus: #1d5fd1;
+  --focus: #0039a6;
 }
 
 :root[data-theme="night"] {
   color-scheme: dark;
-  --bg: #171b20;
-  --panel: #20262d;
-  --panel-2: #262d35;
-  --well: #0e1114;
-  --line: #2e363f;
-  --line-strong: #6b7783;
-  --ink: #eef1f3;
-  --silk: #b8c2cc;
-  --dim: #9aa6b2;
-  --onair: #ff5a4e;
-  --on-onair: #1a0606;
-  --amber: #ffb627;
-  --on-amber: #1f1500;
-  --amber-ink: #ffb627;
-  --amber-wash: #2a2414;
-  --green: #46d884;
-  --green-ink: #46d884;
-  --green-wash: #123322;
-  --green-line: #2a6b47;
-  --error-ink: #ff8a80;
-  --error-wash: #3a1916;
-  --off: #2a323b;
-  --meter-green: #46d884;
-  --meter-amber: #ffb627;
-  --meter-red: #ff5a4e;
-  --btn: #2c343d;
-  --btn-hover: #353e48;
-  --btn-line: #3a444f;
-  --primary: #eef1f3;
-  --on-primary: #111519;
-  --focus: #7fb2ff;
+  --bg: #0a0b0d;
+  --panel: #15171b;
+  --panel-2: #1c1f24;
+  --well: #040506;
+  --line: #292d34;
+  --line-strong: #6a727d;
+  --ink: #f4f6f8;
+  --silk: #b7bec7;
+  --dim: #99a1ab;
+  --onair: #ff4a44;
+  --on-onair: #1a0303;
+  --amber: #fccc0a;
+  --on-amber: #1a1400;
+  --amber-ink: #fccc0a;
+  --amber-wash: #2a2408;
+  --green: #2fc46c;
+  --green-ink: #4bd685;
+  --green-wash: #0d2918;
+  --green-line: #24754a;
+  --error-ink: #ff8a85;
+  --error-wash: #3a1315;
+  --off: #252930;
+  --meter-green: #2fc46c;
+  --meter-amber: #fccc0a;
+  --meter-red: #ff4a44;
+  --btn: #22262c;
+  --btn-hover: #2b3037;
+  --btn-line: #3b414a;
+  --primary: #2f62e6;
+  --on-primary: #ffffff;
+  --focus: #86a8ff;
 }
 
 @theme inline {
