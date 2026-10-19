@@ -14,6 +14,8 @@ import {
 import { parseOperatorStatus, statusAttributes } from "../../lib/session-status.ts";
 import { eventOfRoomName, languageOfRoomName } from "../../lib/languages.ts";
 
+const EM_DASH = String.fromCharCode(0x2014);
+
 const base = {
   connection: "connected",
   operatorPresent: true,
@@ -78,7 +80,7 @@ test("listener strings: same keys in both languages, no em dashes, no slugs", ()
   assert.deepEqual(es.map(([k]) => k), en.map(([k]) => k));
   for (const [k, v] of [...es, ...en]) {
     const text = typeof v === "function" ? v("1.1", 2) : String(v);
-    assert.ok(!text.includes("—"), `em dash in ${k}`);
+    assert.ok(!text.includes(EM_DASH), `em dash in ${k}`);
     assert.ok(!/\b(tu|tú|te|elige|toca)\b/i.test(text), `conversational Spanish in ${k}: ${text}`);
   }
 });

@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * useAudioDevices — lists available mic inputs + speaker outputs.
+ * useAudioDevices, lists available mic inputs + speaker outputs.
  *
  * Browsers only return real device labels AFTER the page has been granted
  * microphone permission. Before then, labels are empty strings (and we fall

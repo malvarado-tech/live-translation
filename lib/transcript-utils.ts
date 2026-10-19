@@ -7,8 +7,8 @@
  *
  * Grouping strategy: chunk consecutive deltas from the same channel into
  * subtitle "cues" of ~5 seconds each, with each cue showing all the text that
- * arrived during that window. Imperfect — deltas don't carry word-level
- * timing — but it's good enough for portfolio/demo use and offline review.
+ * arrived during that window. Imperfect, deltas don't carry word-level
+ * timing, but it's good enough for portfolio/demo use and offline review.
  */
 
 export type TranscriptEntry = {

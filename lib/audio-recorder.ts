@@ -1,5 +1,5 @@
 /**
- * Audio recorder — thin MediaRecorder wrapper.
+ * Audio recorder, thin MediaRecorder wrapper.
  *
  * Used by the operator dashboard to record three audio streams per session:
  * the source mic, the OpenAI translated output, and the Gemini translated
@@ -7,7 +7,7 @@
  * recording per stream; multiple cycles within a single Open Room → Close Room
  * session produce numbered segments (`-1`, `-2`, …).
  *
- * The MediaRecorder is configured to emit Opus in a WebM container — small
+ * The MediaRecorder is configured to emit Opus in a WebM container, small
  * file sizes (~32 kbps), ubiquitous browser support, and acceptable quality
  * for both portfolio/demo use and offline accuracy review.
  */
@@ -51,7 +51,7 @@ export type StartRecorderOptions = {
 /**
  * Start recording a MediaStream. Returns a handle whose `stop()` resolves to
  * the assembled Blob. Returns `null` on environments that don't support
- * MediaRecorder for any of the candidate MIME types — the caller should
+ * MediaRecorder for any of the candidate MIME types, the caller should
  * gracefully skip recording in that case.
  */
 export function startRecorder(opts: StartRecorderOptions): RecorderHandle | null {

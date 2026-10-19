@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { cueAt, cuesUntil, formatClock, pickAudio, replayChannels } from "../../lib/replay.ts";
 
+const EM_DASH = String.fromCharCode(0x2014);
+
 const manifest = JSON.parse(
   readFileSync(new URL("../../public/replay/manifest.json", import.meta.url), "utf8"),
 );
@@ -19,7 +21,7 @@ test("the replay manifest yields ES, PT and the English original", () => {
     assert.ok(pickAudio(c.audio, true), `${c.code} has audio`);
     for (const cue of c.cues) {
       assert.ok(cue.end > cue.start);
-      assert.ok(!cue.text.includes("—"), "no em dash in captions");
+      assert.ok(!cue.text.includes(EM_DASH), "no em dash in captions");
     }
   }
   // Every channel shares the source timeline, so one clock drives all.

@@ -35,7 +35,7 @@ export async function POST(request: Request) {
 
   // Bake the translation-style system instruction into the ephemeral token's
   // constraints. The constrained Live endpoint enforces what was declared at
-  // mint time — if we only sent the instruction in the post-connect setup
+  // mint time, if we only sent the instruction in the post-connect setup
   // message, it could be silently ignored (which manifested as Gemini's
   // native-audio mirror-language behavior: Spanish in → Spanish out).
   const systemInstruction = buildGeminiSystemInstruction(targetLanguageLabel);
@@ -76,7 +76,7 @@ export async function POST(request: Request) {
       token: token.name,
       model: GEMINI_MODEL,
       targetLanguageLabel,
-      // Absolute ms timestamp when the message window closes — used by the
+      // Absolute ms timestamp when the message window closes, used by the
       // operator telemetry panel for the token-expiry countdown.
       expiresAtMs: now + TOKEN_LIFETIME_MS,
     });

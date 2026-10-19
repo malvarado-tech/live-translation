@@ -198,7 +198,7 @@ function slugify(value: string): string {
 }
 
 function fmtMs(ms: number | null): string {
-  if (ms === null) return "—";
+  if (ms === null) return "none";
   if (ms < 1000) return `${Math.round(ms)} ms`;
   return `${(ms / 1000).toFixed(2)} s`;
 }
@@ -220,16 +220,16 @@ function latencyRow(label: string, l: LatencyStats): string {
 function renderMarkdown(r: SessionReport): string {
   const engines = (r.meta?.engines ?? []) as EngineId[];
   const lines: string[] = [];
-  lines.push(`# Session Benchmark — ${r.startedAtIso ?? r.generatedAtIso}`);
+  lines.push(`# Session Benchmark, ${r.startedAtIso ?? r.generatedAtIso}`);
   lines.push("");
   lines.push(
-    `- **Event:** ${r.meta?.eventId || "—"} → ${r.meta?.targetLanguage || "—"}`,
+    `- **Event:** ${r.meta?.eventId || "none"} → ${r.meta?.targetLanguage || "none"}`,
   );
-  lines.push(`- **Engines:** ${engines.length ? engines.join(", ") : "—"}`);
+  lines.push(`- **Engines:** ${engines.length ? engines.join(", ") : "none"}`);
   lines.push(`- **captureSource:** ${r.meta?.captureSource ? "on" : "off"}`);
   lines.push(`- **Duration:** ${fmtDuration(r.durationMs)}`);
-  lines.push(`- **Started:** ${r.startedAtIso ?? "—"}`);
-  lines.push(`- **Ended:** ${r.endedAtIso ?? "—"}`);
+  lines.push(`- **Started:** ${r.startedAtIso ?? "none"}`);
+  lines.push(`- **Ended:** ${r.endedAtIso ?? "none"}`);
   lines.push(
     `- **Marks placed:** ${(r.marks?.length ?? 0)} · **Transcript deltas:** ${(r.transcript?.length ?? 0)}`,
   );

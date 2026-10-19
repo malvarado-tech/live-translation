@@ -3,7 +3,7 @@
  *
  * Accumulates connection-health, latency, listener, and cost metrics during a
  * translation session, plus the full transcript timeline and operator-placed
- * "marks". Pure (no React) — the operator page holds an instance in a ref,
+ * "marks". Pure (no React), the operator page holds an instance in a ref,
  * feeds it events, polls `snapshot()` once a second for the live panel, and
  * calls `report()` at session end to persist a benchmark file.
  */

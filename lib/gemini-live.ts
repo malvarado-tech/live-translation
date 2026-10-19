@@ -52,7 +52,7 @@ export type StartGeminiSessionOptions = {
   /** When true, request input transcription. Adds tokens to the response stream. */
   captureSource?: boolean;
   /** Called once with the translated-audio MediaStream as soon as it's available.
-   *  Useful for MediaRecorder / republishing — the same stream that feeds audioSink. */
+   *  Useful for MediaRecorder / republishing, the same stream that feeds audioSink. */
   onOutputStream?: (stream: MediaStream) => void;
 };
 
@@ -176,7 +176,7 @@ export async function startGeminiSession(
     micSource = inputContext.createMediaStreamSource(audioSource);
     workletNode = new AudioWorkletNode(inputContext, "pcm-encoder");
     micSource.connect(workletNode);
-    // Note: we don't connect workletNode to destination — mic should not echo.
+    // Note: we don't connect workletNode to destination, mic should not echo.
 
     // Output pipeline @ 24 kHz, routed to provided audioSink via a stream destination
     outputContext = new AudioContext({ sampleRate: OUTPUT_SAMPLE_RATE });

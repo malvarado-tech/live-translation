@@ -14,7 +14,7 @@ export type TokenOptions = {
   role: TokenRole;
   /** Optional display name shown in the LiveKit dashboard / debug UIs. */
   name?: string;
-  /** Token lifetime in seconds. Default 6 hours — fine for a single event. */
+  /** Token lifetime in seconds. Default 6 hours, fine for a single event. */
   ttlSeconds?: number;
 };
 

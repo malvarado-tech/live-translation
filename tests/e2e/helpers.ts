@@ -1,5 +1,7 @@
 import { expect, type Page } from "@playwright/test";
 
+const EM_DASH = String.fromCharCode(0x2014);
+
 export type Theme = "light" | "night";
 
 /** Set remembered preferences before the page loads. */
@@ -153,5 +155,5 @@ export async function smallTargets(page: Page, selector: string, min = 44) {
 
 export async function expectNoEmDash(page: Page) {
   const text = await page.evaluate(() => document.body.innerText);
-  expect(text.includes("—"), "em dash on screen").toBe(false);
+  expect(text.includes(EM_DASH), "em dash on screen").toBe(false);
 }

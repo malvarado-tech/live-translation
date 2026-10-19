@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { describeOperatorError, extractServerMessage } from "../../lib/error-copy.ts";
 
+const EM_DASH = String.fromCharCode(0x2014);
+
 test("raw JSON bodies are reduced to their message", () => {
   assert.equal(
     extractServerMessage('Session creation failed (500): {"error":"OPENAI_API_KEY is not configured on the server."}'),
@@ -34,5 +36,5 @@ test("unknown failures still read as a sentence and keep the detail", () => {
   const e = describeOperatorError("Room", "weird");
   assert.equal(e.title, "Room error");
   assert.equal(e.detail, "weird");
-  for (const v of Object.values(e)) assert.ok(!v.includes("—"));
+  for (const v of Object.values(e)) assert.ok(!v.includes(EM_DASH));
 });

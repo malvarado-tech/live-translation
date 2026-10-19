@@ -3,7 +3,7 @@
  *
  * Opens a WebRTC peer connection to OpenAI's gpt-realtime-translate endpoint.
  * Captures microphone audio, streams it to OpenAI, and exposes the translated
- * audio MediaStreamTrack to the caller — who can choose to play it locally
+ * audio MediaStreamTrack to the caller, who can choose to play it locally
  * (audioSink), republish it (e.g., to a LiveKit room), or both.
  *
  * Auto-reconnect:
@@ -51,7 +51,7 @@ export type StartSessionOptions = {
    *  while the primary sink targets a specific monitor headphone). */
   broadcastSink?: HTMLAudioElement | null;
   /** Optional: called with the translated MediaStreamTrack whenever it
-   *  arrives. Called once per successful connect — i.e., once on initial
+   *  arrives. Called once per successful connect, i.e., once on initial
    *  start, and once again per successful auto-reconnect. The caller is
    *  responsible for replacing any previously published/recorded track. */
   onTrack?: (track: MediaStreamTrack) => void;
@@ -107,7 +107,7 @@ export async function startSession(
     try {
       pc?.getSenders().forEach((sender) => {
         try {
-          // Don't stop mic tracks — we reuse them on reconnect.
+          // Don't stop mic tracks, we reuse them on reconnect.
           if (sender.track && sender.track.kind !== "audio") {
             sender.track.stop();
           }
@@ -239,7 +239,7 @@ export async function startSession(
       if (broadcastSink && stream) {
         broadcastSink.srcObject = stream;
         broadcastSink.play().catch(() => {
-          // ignore — broadcast sink is best-effort
+          // ignore, broadcast sink is best-effort
         });
       }
       if (onTrack && track) {
@@ -263,7 +263,7 @@ export async function startSession(
         softClosePc();
         scheduleReconnect("WebRTC peer entered failed state");
       } else if (pc?.connectionState === "connected") {
-        // Reset the attempt counter after a stable stretch — protects against
+        // Reset the attempt counter after a stable stretch, protects against
         // the case where a flaky network burns through all 3 attempts before
         // a real problem hits. If we stay connected 60s, we're "healthy."
         if (stabilityTimer) clearTimeout(stabilityTimer);
