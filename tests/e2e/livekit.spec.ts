@@ -38,6 +38,8 @@ test("operator to listener: live, paused, ended", async ({ browser }, info) => {
 
   const lisCtx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, locale: "es-MX" });
   const lis = await lisCtx.newPage();
+  // The event page polls every 15 s; give the first poll time to see the status.
+  await expect.poll(async () => (await (await lis.request.get(`/api/event-languages?event=${event}`)).json()).title, { timeout: 10_000 }).toBe("E2E talk");
   await lis.goto(`/e/${event}`);
   await expect(lis.getByText("E2E talk")).toBeVisible({ timeout: 10_000 });
   await expect(lis.getByRole("link", { name: /Español/ })).toContainText("En espera");
@@ -81,7 +83,8 @@ test("the operator desk reads the event's other languages", async ({ browser }, 
   await es.goto(`/operator?event=${event}&lang=es&mode=original`);
   await es.getByTestId("setup-primary").click();
   await expect(es.getByTestId("strip-en")).toBeVisible({ timeout: 15_000 });
-  await expect(es.getByTestId("tally-en")).toHaveText("Original");
+  // Up to one 5 s server cache plus one 5 s poll.
+  await expect(es.getByTestId("tally-en")).toHaveText("Original", { timeout: 15_000 });
   await expect(es.getByTestId("strip-en")).toContainText("Level metered in its own tab");
   await es.getByRole("radio", { name: "Rows" }).click();
   await expect(es.getByTestId("row-en")).toContainText("other tab");
