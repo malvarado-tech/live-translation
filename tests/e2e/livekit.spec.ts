@@ -37,6 +37,8 @@ test("operator to listener: live, paused, ended", async ({ browser }, info) => {
   await expect(op.getByTestId("event-url")).toContainText(`/e/${event}`);
 
   const lisCtx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, locale: "es-MX" });
+  // The level meter lives in the Receiver view.
+  await lisCtx.addInitScript(() => localStorage.setItem("lt.view.listener", "receiver"));
   const lis = await lisCtx.newPage();
   // The event page polls every 15 s; give the first poll time to see the status.
   await expect.poll(async () => (await (await lis.request.get(`/api/event-languages?event=${event}`)).json()).title, { timeout: 10_000 }).toBe("E2E talk");
@@ -59,11 +61,11 @@ test("operator to listener: live, paused, ended", async ({ browser }, info) => {
   await expectContrast(lis);
 
   await op.getByTestId("primary-action").click();
-  await expect(lis.getByTestId("listener-tally")).toHaveText("En pausa", { timeout: 10_000 });
+  await expect(lis.getByTestId("listener-tally")).toHaveText("En pausa entre ponentes.", { timeout: 10_000 });
 
   await op.getByTestId("end-session").click();
   await op.getByTestId("confirm-end").click();
-  await expect(lis.getByTestId("listener-tally")).toHaveText("Finalizada", { timeout: 10_000 });
+  await expect(lis.getByTestId("listener-tally")).toHaveText("Sesión finalizada.", { timeout: 10_000 });
   await expect(op.getByTestId("session-tally")).toHaveText("Off air");
   await opCtx.close();
   await lisCtx.close();
@@ -85,8 +87,10 @@ test("the operator desk reads the event's other languages", async ({ browser }, 
   await expect(es.getByTestId("strip-en")).toBeVisible({ timeout: 15_000 });
   // Up to one 5 s server cache plus one 5 s poll.
   await expect(es.getByTestId("tally-en")).toHaveText("Original", { timeout: 15_000 });
-  await expect(es.getByTestId("strip-en")).toContainText("Level metered in its own tab");
+  await expect(es.getByTestId("strip-en")).toContainText("Other tab");
+  await expect(es.getByTestId("source-note")).toContainText("room server");
+  await es.getByTestId("settings-button").click();
   await es.getByRole("radio", { name: "Rows" }).click();
-  await expect(es.getByTestId("row-en")).toContainText("other tab");
+  await expect(es.getByTestId("row-en")).toContainText("Other tab");
   await ctx.close();
 });

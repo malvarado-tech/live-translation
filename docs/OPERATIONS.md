@@ -45,7 +45,7 @@ Without `NEXT_PUBLIC_LIVEKIT_URL`, the flow collapses to Start and Stop on a sin
 
 ## Views and themes
 
-**Desk** shows the input and each language as vertical channel strips with a tally light, ladder meter, response time, listener count and on-air time, with transcript lanes below. **Rows** shows the same channels as horizontal rows, one alert slot with its fix, and the monitored transcript at reading size. Light is the default theme; **Night** suits dark rooms. Both choices are remembered on the device.
+**Desk** shows the input and each language as vertical channel strips with a tally light, ladder meter, response time, listener count and on-air time, with transcript lanes below. **Rows** shows the same channels as horizontal rows, one alert slot with its fix, and the monitored transcript at reading size. Light is the default theme; **Night** suits dark rooms. View and theme are under **Settings** at the end of the session bar, and both choices are remembered on the device. Listeners choose their own view, theme and text size under **Options** on their phone.
 
 ## Alerts
 

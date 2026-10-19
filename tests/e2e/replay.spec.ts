@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { setPrefs } from "./helpers";
 
 async function time(page: Page): Promise<number> {
   const [m, s] = (await page.getByTestId("replay-time").first().innerText()).split(":").map(Number);
@@ -15,8 +16,14 @@ test.describe("listener replay", () => {
     await expect(page.getByTestId("listener-badge")).toHaveText(
       "Grabación de 1962 · traducción y voz generadas con IA",
     );
+    // Credits sit behind one disclosure at the bottom.
+    await expect(page.getByText("Dominio público", { exact: false })).toBeHidden();
+    await page.getByTestId("replay-attribution").getByText("Créditos").click();
     await expect(page.getByTestId("replay-attribution")).toContainText("Dominio público");
-    await page.getByTestId("ui-lang-toggle").click();
+    await expect(page.getByTestId("replay-attribution")).toContainText("John F. Kennedy");
+    await page.getByTestId("options-button").click();
+    await page.getByTestId("ui-lang-switch").getByRole("radio", { name: "English" }).click();
+    await page.keyboard.press("Escape");
     await expect(page.getByTestId("listener-badge")).toHaveText(
       "1962 recording · AI-generated translation and voice",
     );
@@ -27,11 +34,12 @@ test.describe("listener replay", () => {
   });
 
   test("one clock drives audio and captions across language switches", async ({ page }) => {
+    await setPrefs(page, { "lt.view.listener": "receiver" });
     await page.goto("/replay");
     await page.getByTestId("listen-button").click();
     await expect(page.getByTestId("replay-play")).toHaveAttribute("data-state", "playing");
     await expect(page.getByTestId("caption-tail")).toContainText("Zarpamos", { timeout: 5000 });
-    await expect(page.getByTestId("listener-tally")).toHaveText("Grabación");
+    await expect(page.getByTestId("listener-tally")).toHaveText("Reproducción en curso.");
     await expect
       .poll(async () => Number(await page.getByTestId("listener-meter").getAttribute("data-level")), { timeout: 5000 })
       .toBeGreaterThan(0.05);
@@ -43,6 +51,7 @@ test.describe("listener replay", () => {
     expect(before).toBeGreaterThanOrEqual(124);
 
     // Switch to Portuguese: same position, still playing, Portuguese captions.
+    await page.getByTestId("language-button").click();
     await page.getByTestId("channel-pt").click();
     await expect(page.getByTestId("caption-tail")).toContainText(/Lua/, { timeout: 5000 });
     await expect(page.getByTestId("replay-play")).toHaveAttribute("data-state", "playing", { timeout: 5000 });
@@ -50,18 +59,19 @@ test.describe("listener replay", () => {
     expect(Math.abs(after - before)).toBeLessThanOrEqual(3);
 
     // Original English.
+    await page.getByTestId("language-button").click();
     await page.getByTestId("channel-en").click();
     await expect(page.getByTestId("caption-tail")).toContainText(/moon/, { timeout: 5000 });
 
     // Pause.
     await page.getByTestId("replay-play").click();
     await expect(page.getByTestId("replay-play")).toHaveAttribute("data-state", "paused");
-    await expect(page.getByTestId("listener-tally")).toHaveText("En pausa");
+    await expect(page.getByTestId("listener-tally")).toHaveText("Reproducción en pausa.");
   });
 
   test("captions view shows the stage and the language sheet", async ({ page }) => {
     await page.goto("/replay");
-    await page.getByRole("radio", { name: "Subtítulos" }).click();
+    await expect(page.getByTestId("listener-surface")).toHaveAttribute("data-view", "captions");
     await page.getByTestId("listen-button").click();
     await expect(page.getByTestId("caption-stage")).toContainText("Zarpamos", { timeout: 5000 });
     await page.getByTestId("language-button").click();
@@ -85,6 +95,7 @@ test.describe("operator replay", () => {
     await expect(page.getByTestId("lane-target")).toContainText("Zarpamos", { timeout: 5000 });
     await page.getByTestId("monitor-pt").click();
     await expect(page.getByTestId("lane-target")).toContainText("Zarpamos neste");
+    await page.getByTestId("settings-button").click();
     await page.getByRole("radio", { name: "Rows" }).click();
     await expect(page.getByTestId("rows-view")).toBeVisible();
   });

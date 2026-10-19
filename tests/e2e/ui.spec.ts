@@ -26,6 +26,19 @@ type Surface = {
   views: Array<{ value: string; label: string; testId: string }>;
   switchLabel: string;
   ready: (page: Page) => Promise<void>;
+  /** Opens the control that holds view and theme. */
+  openSettings: (page: Page) => Promise<void>;
+  themeSwitch: string;
+};
+
+const openOperatorSettings = async (page: Page) => {
+  await page.getByTestId("settings-button").click();
+  await expect(page.getByTestId("settings-menu")).toBeVisible();
+};
+
+const openListenerOptions = async (page: Page) => {
+  await page.getByTestId("options-button").click();
+  await expect(page.getByTestId("options-sheet")).toBeVisible();
 };
 
 const SURFACES: Surface[] = [
@@ -41,6 +54,8 @@ const SURFACES: Surface[] = [
     ready: async (page) => {
       await expect(page.getByTestId("setup")).toBeVisible();
     },
+    openSettings: openOperatorSettings,
+    themeSwitch: "operator-theme-switch",
   },
   {
     name: "listener",
@@ -48,12 +63,14 @@ const SURFACES: Surface[] = [
     viewKey: "lt.view.listener",
     switchLabel: "Vista",
     views: [
-      { value: "receiver", label: "Receptor", testId: "listener-surface" },
       { value: "captions", label: "Subtítulos", testId: "listener-surface" },
+      { value: "receiver", label: "Receptor", testId: "listener-surface" },
     ],
     ready: async (page) => {
       await expect(page.getByTestId("listen-button")).toBeVisible();
     },
+    openSettings: openListenerOptions,
+    themeSwitch: "theme-switch",
   },
   {
     name: "picker",
@@ -61,12 +78,14 @@ const SURFACES: Surface[] = [
     viewKey: "lt.view.listener",
     switchLabel: "View",
     views: [
-      { value: "receiver", label: "Receiver", testId: "picker" },
       { value: "captions", label: "Captions", testId: "picker" },
+      { value: "receiver", label: "Receiver", testId: "picker" },
     ],
     ready: async (page) => {
       await expect(page.getByTestId("language-list").getByRole("link")).toHaveCount(3);
     },
+    openSettings: openListenerOptions,
+    themeSwitch: "theme-switch",
   },
   {
     name: "replay",
@@ -74,12 +93,14 @@ const SURFACES: Surface[] = [
     viewKey: "lt.view.listener",
     switchLabel: "Vista",
     views: [
-      { value: "receiver", label: "Receptor", testId: "listener-surface" },
       { value: "captions", label: "Subtítulos", testId: "listener-surface" },
+      { value: "receiver", label: "Receptor", testId: "listener-surface" },
     ],
     ready: async (page) => {
       await expect(page.getByTestId("replay-attribution")).toBeVisible();
     },
+    openSettings: openListenerOptions,
+    themeSwitch: "theme-switch",
   },
   {
     name: "operator replay",
@@ -93,6 +114,8 @@ const SURFACES: Surface[] = [
     ready: async (page) => {
       await expect(page.getByTestId(/strip-es|row-es/)).toBeVisible();
     },
+    openSettings: openOperatorSettings,
+    themeSwitch: "operator-theme-switch",
   },
 ];
 
@@ -112,7 +135,10 @@ for (const s of SURFACES) {
           await s.ready(page);
           await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
           if (s.name === "operator" || s.name === "operator replay") {
-            await expect(page.getByTestId(s.name === "operator" ? "operator-view-switch" : "operator-view-switch").getByRole("radio", { name: v.label })).toHaveAttribute("aria-checked", "true");
+            await s.openSettings(page);
+            await expect(page.getByTestId("operator-view-switch").getByRole("radio", { name: v.label })).toHaveAttribute("aria-checked", "true");
+            await page.keyboard.press("Escape");
+            await expect(page.getByTestId("settings-menu")).toHaveCount(0);
           } else {
             await expect(page.getByTestId(s.name === "picker" ? "picker" : "listener-surface")).toHaveAttribute("data-view", v.value);
           }
@@ -128,15 +154,37 @@ for (const s of SURFACES) {
       }
     }
 
+    test("view and theme sit in one settings control; open, it passes contrast and target size", async ({ page }, info) => {
+      for (const theme of THEMES) {
+        await setPrefs(page, { "lt.theme": theme });
+        await page.goto(s.path);
+        await s.ready(page);
+        // Not on the main screen until the control is opened.
+        await expect(page.getByRole("radiogroup", { name: s.switchLabel })).toHaveCount(0);
+        await s.openSettings(page);
+        await expect(page.getByRole("radiogroup", { name: s.switchLabel })).toBeVisible();
+        await expectContrast(page);
+        await expectNoEmDash(page);
+        await expectNoHorizontalScroll(page);
+        if (info.project.name === "mobile") {
+          const scope = s.name.startsWith("operator") ? "[data-testid=settings-menu]" : "[data-testid=options-sheet]";
+          const small = await smallTargets(page, `${scope} button, ${scope} a[href], ${scope} [role=radio]`);
+          expect(small, small.join("\n")).toEqual([]);
+        }
+      }
+    });
+
     test("the view switch is labelled and remembered on this device", async ({ page }) => {
       await page.goto(s.path);
       await s.ready(page);
+      await s.openSettings(page);
       const group = page.getByRole("radiogroup", { name: s.switchLabel });
       await expect(group).toBeVisible();
       const second = s.views[1];
       await group.getByRole("radio", { name: second.label }).click();
       await page.reload();
       await s.ready(page);
+      await s.openSettings(page);
       await expect(
         page.getByRole("radiogroup", { name: s.switchLabel }).getByRole("radio", { name: second.label }),
       ).toHaveAttribute("aria-checked", "true");
@@ -146,11 +194,8 @@ for (const s of SURFACES) {
       await page.goto(s.path);
       await s.ready(page);
       await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-      if (s.name.startsWith("operator")) {
-        await page.getByTestId("operator-theme-switch").getByRole("radio", { name: "Night" }).click();
-      } else {
-        await page.getByTestId("theme-toggle").click();
-      }
+      await s.openSettings(page);
+      await page.getByTestId(s.themeSwitch).getByRole("radio").nth(1).click();
       await expect(page.locator("html")).toHaveAttribute("data-theme", "night");
       await page.reload();
       await expect(page.locator("html")).toHaveAttribute("data-theme", "night");
@@ -178,10 +223,14 @@ test.describe("storage blocked", () => {
       });
     });
     await page.goto("/listen/demo-en");
-    await page.getByRole("radio", { name: "Captions" }).click();
     await expect(page.getByTestId("listener-surface")).toHaveAttribute("data-view", "captions");
-    await page.getByTestId("theme-toggle").click();
+    await openListenerOptions(page);
+    await page.getByRole("radio", { name: "Receiver" }).click();
+    await expect(page.getByTestId("listener-surface")).toHaveAttribute("data-view", "receiver");
+    await page.getByTestId("theme-switch").getByRole("radio", { name: "Night" }).click();
     await expect(page.locator("html")).toHaveAttribute("data-theme", "night");
+    await page.getByTestId("text-size-switch").getByRole("radio", { name: "Large", exact: true }).click();
+    await expect(page.getByTestId("text-size-switch").getByRole("radio", { name: "Large", exact: true })).toHaveAttribute("aria-checked", "true");
   });
 });
 
@@ -254,8 +303,27 @@ test.describe("listener without keys", () => {
   test("the interface language can be switched by hand", async ({ page }) => {
     await page.goto("/listen/demo-es");
     await expect(page.getByTestId("listen-button")).toHaveText("Escuchar");
-    await page.getByTestId("ui-lang-toggle").click();
+    await openListenerOptions(page);
+    await page.getByTestId("ui-lang-switch").getByRole("radio", { name: "English" }).click();
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("options-sheet")).toBeHidden();
     await expect(page.getByTestId("listen-button")).toHaveText("Listen");
     await expect(page.locator("html")).toHaveAttribute("lang", "en");
+  });
+
+  test("the main screen keeps only title, language, captions, status and the primary control", async ({ page }) => {
+    await page.route("**/api/event-languages?**", (route) => route.fulfill({ json: LIVE }));
+    await page.goto("/listen/demo-es?event=demo");
+    await expect(page.getByTestId("language-button")).toContainText("Español");
+    await expect(page.getByTestId("caption-stage")).toBeVisible();
+    await expect(page.getByTestId("listener-status-line")).toHaveText("Audio sin iniciar.");
+    // No duplicate level indicator, channel grid or inline switches in Captions.
+    await expect(page.getByTestId("listener-meter")).toHaveCount(0);
+    await expect(page.getByTestId("channel-buttons")).toHaveCount(0);
+    await expect(page.getByRole("radiogroup")).toHaveCount(0);
+    // The language button lists the event's languages with their state.
+    await page.getByTestId("language-button").click();
+    await expect(page.getByTestId("channel-pt")).toContainText("En pausa");
+    await expect(page.getByTestId("channel-es")).toHaveAttribute("aria-current", "true");
   });
 });

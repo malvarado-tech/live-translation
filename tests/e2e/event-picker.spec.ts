@@ -58,17 +58,17 @@ test.describe("event page with live languages (mocked endpoint)", () => {
     await page.getByRole("link", { name: /Español/ }).click();
     await expect(page).toHaveURL(/\/listen\/demo-es\?event=demo$/);
     // The Spanish room speaks Spanish; the room name is never shown.
-    await expect(page.getByTestId("receiver-card")).toContainText("Español");
+    await expect(page.getByTestId("language-button")).toContainText("Español");
     await expect(page.getByText("demo-es")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Escuchar" })).toBeVisible();
 
-    // Channel buttons switch language; one tap on Listen starts the audio.
+    // The language button switches language; one tap on Listen starts the audio.
+    await page.getByTestId("language-button").click();
     await page.getByTestId("channel-en").click();
     await expect(page).toHaveURL(/\/listen\/demo-en\?event=demo$/);
     await expect(page.getByRole("button", { name: "Listen" })).toBeVisible();
 
-    // The Captions view goes back to the event page through the language sheet.
-    await page.getByRole("radio", { name: "Captions" }).click();
+    // The language sheet goes back to the event page.
     await page.getByTestId("language-button").click();
     await page.getByRole("link", { name: "Language selection" }).click();
     await expect(page).toHaveURL(/\/e\/demo$/);
@@ -83,7 +83,8 @@ test.describe("event page with live languages (mocked endpoint)", () => {
     await page.route("**/api/event-languages?**", (route) =>
       route.fulfill({ status: 502, json: { error: "Could not reach the translation server." } }),
     );
-    await page.getByRole("button", { name: "Refresh" }).click();
+    // The list refreshes on its own (every 15 s and when the tab comes back).
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
     await expect(page.getByTestId("languages-error")).toContainText("List not updated");
     await expect(page.getByText("Could not reach the translation server.")).toHaveCount(0);
     await expect(page.getByTestId("language-list").getByRole("link")).toHaveCount(2);
@@ -113,16 +114,16 @@ test.describe("event page with live languages (mocked endpoint)", () => {
 test.describe("existing routes are unchanged", () => {
   test("a direct listener link has no event link", async ({ page }) => {
     await page.goto("/listen/demo-en");
-    await expect(page.getByTestId("receiver-card")).toContainText("English");
+    await expect(page.getByTestId("language-current")).toContainText("English");
     await expect(page.getByRole("button", { name: "Listen" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Change language" })).toHaveCount(0);
-    await expect(page.getByTestId("channel-buttons")).toHaveCount(0);
+    await expect(page.getByTestId("language-button")).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Language selection" })).toHaveCount(0);
   });
 
   test("an event parameter from another event is ignored", async ({ page }) => {
     await page.goto("/listen/demo-en?event=other");
-    await expect(page.getByTestId("receiver-card")).toContainText("English");
-    await expect(page.getByRole("link", { name: "Change language" })).toHaveCount(0);
+    await expect(page.getByTestId("language-current")).toContainText("English");
+    await expect(page.getByTestId("language-button")).toHaveCount(0);
   });
 
   test("the operator dashboard still loads", async ({ page }) => {
