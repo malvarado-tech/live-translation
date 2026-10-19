@@ -19,6 +19,8 @@ import {
   type GeminiSession,
   type GeminiStatus,
 } from "@/lib/gemini-live";
+import { eventRoomName, slugify } from "@/lib/event-rooms";
+import { TARGET_LANGUAGES } from "@/lib/languages";
 import { startPublisher, type Publisher } from "@/lib/livekit-publisher";
 import {
   startSession,
@@ -32,22 +34,6 @@ import {
   type EngineId,
   type TelemetrySnapshot,
 } from "@/lib/telemetry";
-
-const TARGET_LANGUAGES: Array<{ code: string; label: string }> = [
-  { code: "en", label: "English" },
-  { code: "es", label: "Español" },
-  { code: "pt", label: "Português" },
-  { code: "fr", label: "Français" },
-  { code: "de", label: "Deutsch" },
-  { code: "it", label: "Italiano" },
-  { code: "ja", label: "日本語" },
-  { code: "ko", label: "한국어" },
-  { code: "zh", label: "中文" },
-  { code: "ru", label: "Русский" },
-  { code: "hi", label: "हिन्दी" },
-  { code: "id", label: "Bahasa Indonesia" },
-  { code: "vi", label: "Tiếng Việt" },
-];
 
 type EngineStatus = RealtimeStatus | GeminiStatus;
 
@@ -90,15 +76,6 @@ function toConnState(s: RealtimeStatus | GeminiStatus): ConnState {
   return s;
 }
 
-function slugify(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9-]/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 64);
-}
-
 export default function OperatorPage() {
   const [eventId, setEventId] = useState("demo");
   const [targetLanguage, setTargetLanguage] = useState("en");
@@ -133,6 +110,7 @@ export default function OperatorPage() {
 
   const [listenerBaseUrl, setListenerBaseUrl] = useState<string>("");
   const [copied, setCopied] = useState(false);
+  const [eventCopied, setEventCopied] = useState(false);
   // Set while an auto-reconnect is pending or in flight. Cleared when the
   // session goes back to `live` or `closed`. Displayed as an amber banner so
   // operators see what's happening without it looking like a hard error.
@@ -256,7 +234,7 @@ export default function OperatorPage() {
 
   const room = useMemo(() => {
     const slug = slugify(eventId || "demo");
-    return `${slug}-${targetLanguage}`;
+    return eventRoomName(slug, targetLanguage);
   }, [eventId, targetLanguage]);
 
   const listenerUrl = useMemo(() => {
@@ -264,6 +242,13 @@ export default function OperatorPage() {
     if (!base) return "";
     return `${base}/listen/${room}`;
   }, [listenerBaseUrl, room]);
+
+  // One link per event: listeners pick among the languages that are live.
+  const eventUrl = useMemo(() => {
+    const base = listenerBaseUrl.replace(/\/+$/, "");
+    if (!base) return "";
+    return `${base}/e/${slugify(eventId || "demo")}`;
+  }, [listenerBaseUrl, eventId]);
 
   const targetLanguageLabel = useMemo(
     () =>
@@ -728,6 +713,17 @@ export default function OperatorPage() {
     }
   }, [listenerUrl]);
 
+  const handleCopyEventUrl = useCallback(async () => {
+    if (!eventUrl) return;
+    try {
+      await navigator.clipboard.writeText(eventUrl);
+      setEventCopied(true);
+      setTimeout(() => setEventCopied(false), 2000);
+    } catch {
+      // ignore
+    }
+  }, [eventUrl]);
+
   const roomOpen = phase !== "idle";
   const translating = phase === "translating";
 
@@ -1098,6 +1094,41 @@ export default function OperatorPage() {
                 <span>
                   Translation: {phase === "translating" ? "live" : "not started"}
                 </span>
+              </div>
+            </div>
+          </section>
+        ) : null}
+
+        {LIVEKIT_ENABLED && roomOpen ? (
+          <section
+            className="grid grid-cols-1 gap-4 rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900 md:grid-cols-[auto_1fr] md:gap-6"
+            data-testid="event-link"
+          >
+            <div className="flex items-center justify-center rounded-md bg-white p-3 ring-1 ring-zinc-200 dark:bg-zinc-50">
+              {eventUrl ? (
+                <QRCodeSVG value={eventUrl} size={128} includeMargin={false} />
+              ) : null}
+            </div>
+            <div className="flex flex-col justify-center gap-3">
+              <div className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                Event link · all languages
+              </div>
+              <div className="break-all font-mono text-sm">
+                {eventUrl}
+              </div>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                Listeners see every language of this event that has a room
+                open and can switch between them. Open one dashboard tab per
+                language with the same event ID.
+              </p>
+              <div className="flex flex-wrap items-center gap-3 text-xs">
+                <button
+                  type="button"
+                  onClick={handleCopyEventUrl}
+                  className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 font-medium shadow-sm hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800"
+                >
+                  {eventCopied ? "Copied!" : "Copy URL"}
+                </button>
               </div>
             </div>
           </section>

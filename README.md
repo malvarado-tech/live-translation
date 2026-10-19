@@ -8,6 +8,7 @@ The app has two roles.
 
 - **Operator** (`/operator`): a dashboard on the laptop that receives the speaker's audio. The operator picks the target language and audio devices, opens a room, shares the listener QR code, starts and stops translation between speakers, and follows live session telemetry (connection state, token expiry, first-token latency, listener count, estimated cost).
 - **Listeners** (`/listen/[room]`): a mobile web page opened from the QR code. It joins the room as a subscribe-only participant and plays the translated audio, with volume, mute and live captions. Nothing to install.
+- **Event page** (`/e/[event]`): one link and QR code for the whole event. It lists the languages of the event that currently have a room open, and listeners can come back to it to switch language without scanning another code.
 
 Translation runs on OpenAI's `gpt-realtime-translate` model. The translated audio is fanned out through a self-hosted [LiveKit](https://livekit.io) server, so the translation cost does not grow with the number of listeners.
 
@@ -59,6 +60,7 @@ Long-lived keys (`OPENAI_API_KEY`, `LIVEKIT_API_SECRET`, `GOOGLE_AI_API_KEY`) ar
 | `POST /api/session` | OpenAI ephemeral client secret for one translation session |
 | `POST /api/publish-token` | LiveKit JWT that can publish to one room (6 h TTL) |
 | `GET /api/listen-token` | LiveKit JWT that can only subscribe to one room (6 h TTL) |
+| `GET /api/event-languages` | Languages of one event that have an operator connected. No credentials are returned; results are cached for 5 s per event and requests are rate limited per client |
 | `POST /api/gemini-token` | Gemini Live ephemeral token (experimental, not used by the UI) |
 | `POST /api/save-benchmark` | Writes the session report to `benchmarks/` on the server |
 
@@ -133,6 +135,7 @@ All variables are documented in [`.env.example`](.env.example).
 | `LIVEKIT_API_KEY` | For rooms | LiveKit API key used to sign room tokens. |
 | `LIVEKIT_API_SECRET` | For rooms | LiveKit API secret used to sign room tokens. |
 | `NEXT_PUBLIC_LIVEKIT_URL` | For rooms | WebSocket URL of the LiveKit server. Empty disables rooms and QR codes. |
+| `LIVEKIT_API_URL` | No | HTTP(S) URL the server uses to query LiveKit for the event page. Defaults to `NEXT_PUBLIC_LIVEKIT_URL` with `ws` replaced by `http`. |
 | `NEXT_PUBLIC_LISTENER_BASE_URL` | No | Base URL for the listener link and QR code. Must be reachable from phones. Falls back to the page origin and can be edited in the UI. |
 | `GOOGLE_AI_API_KEY` | No | Only for the experimental Gemini Live engine, which is hidden in the UI. |
 | `ALLOWED_DEV_ORIGINS` | No | Comma-separated hosts allowed to load dev assets under `npm run dev`. Needed for phones on the LAN. |
@@ -155,12 +158,12 @@ The translation session bills for as long as it is open, whether or not anyone i
 
 - No authentication on the API routes. Anyone who can reach the server can mint OpenAI and LiveKit credentials. Run it on a trusted network only, and do not expose it to the internet without adding auth.
 - LiveKit runs in `--dev` mode. A public deployment needs a real LiveKit configuration, generated keys and TLS.
-- One target language per room. Several languages need several operator tabs.
+- One target language per room. Several languages need several operator tabs with the same event ID; the event link groups them for listeners.
 - No PWA manifest; the listener page is a plain mobile web page.
 - A UI pass is pending.
 - The Gemini Live engine (`lib/gemini-live.ts`, `/api/gemini-token`) is kept in the code but hidden in the UI.
 - The latency shown is first-token latency, not end-to-end audio latency.
-- No automated tests.
+- Tests cover the event page and room filtering; the translation flow itself is tested by hand.
 
 ## Privacy
 

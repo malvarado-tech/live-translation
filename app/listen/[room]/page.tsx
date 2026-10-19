@@ -8,7 +8,9 @@ import {
   type RemoteTrack,
   type RemoteTrackPublication,
 } from "livekit-client";
+import Link from "next/link";
 import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { slugify } from "@/lib/event-rooms";
 import { CAPTION_TOPIC, type CaptionMessage } from "@/lib/livekit-publisher";
 
 type ListenerStatus =
@@ -48,10 +50,20 @@ const STATUS_DOT_CLASS: Record<ListenerStatus, string> = {
 
 export default function ListenerPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ room: string }>;
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const { room } = use(params);
+  const { event: eventParam } = use(searchParams);
+  // Set when the page was opened from the event page (/e/[event]); enables
+  // the "Change language" link back to it. Only honoured when the room
+  // belongs to that event.
+  const eventSlug = useMemo(() => {
+    const slug = slugify(typeof eventParam === "string" ? eventParam : "");
+    return slug && room.startsWith(`${slug}-`) ? slug : null;
+  }, [eventParam, room]);
 
   const [status, setStatus] = useState<ListenerStatus>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -213,6 +225,14 @@ export default function ListenerPage({
           <p className="font-mono text-xs text-zinc-500 dark:text-zinc-400">
             room: {prettyRoom}
           </p>
+          {eventSlug ? (
+            <Link
+              href={`/e/${encodeURIComponent(eventSlug)}`}
+              className="mt-1 text-sm font-medium text-emerald-700 underline-offset-4 hover:underline dark:text-emerald-400"
+            >
+              Change language
+            </Link>
+          ) : null}
         </header>
 
         <div className="flex items-center justify-center gap-2 text-sm font-medium">
