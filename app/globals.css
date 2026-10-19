@@ -1,26 +1,150 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/*
+ * Two themes share one structure. Light is the default; Night is the
+ * low-glare option for dark rooms. The attribute is set on <html> before
+ * first paint by the inline script in app/layout.tsx.
+ */
+@custom-variant dark (&:where([data-theme="night"], [data-theme="night"] *));
+
+:root,
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #eceeea;
+  --panel: #ffffff;
+  --panel-2: #f4f5f2;
+  --well: #e2e6e9;
+  --line: #c9d0d6;
+  --line-strong: #7d8893;
+  --ink: #111519;
+  --silk: #36404a;
+  --dim: #4f5a65;
+  --onair: #c42b1f;
+  --on-onair: #ffffff;
+  --amber: #f5b82e;
+  --on-amber: #241700;
+  --amber-ink: #744b00;
+  --amber-wash: #fff3d1;
+  --green: #1e9e57;
+  --green-ink: #0d6633;
+  --green-wash: #e1f4e8;
+  --green-line: #5fb383;
+  --error-ink: #a3241a;
+  --error-wash: #fde8e5;
+  --off: #ccd3d9;
+  --btn: #e6eaed;
+  --btn-hover: #dae0e5;
+  --btn-line: #b5bec7;
+  --primary: #14181d;
+  --on-primary: #ffffff;
+  --focus: #1d5fd1;
+}
+
+:root[data-theme="night"] {
+  color-scheme: dark;
+  --bg: #171b20;
+  --panel: #20262d;
+  --panel-2: #262d35;
+  --well: #0e1114;
+  --line: #2e363f;
+  --line-strong: #6b7783;
+  --ink: #eef1f3;
+  --silk: #b8c2cc;
+  --dim: #9aa6b2;
+  --onair: #ff5a4e;
+  --on-onair: #1a0606;
+  --amber: #ffb627;
+  --on-amber: #1f1500;
+  --amber-ink: #ffb627;
+  --amber-wash: #2a2414;
+  --green: #46d884;
+  --green-ink: #46d884;
+  --green-wash: #123322;
+  --green-line: #2a6b47;
+  --error-ink: #ff8a80;
+  --error-wash: #3a1916;
+  --off: #2a323b;
+  --btn: #2c343d;
+  --btn-hover: #353e48;
+  --btn-line: #3a444f;
+  --primary: #eef1f3;
+  --on-primary: #111519;
+  --focus: #7fb2ff;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-panel-2: var(--panel-2);
+  --color-well: var(--well);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-silk: var(--silk);
+  --color-dim: var(--dim);
+  --color-onair: var(--onair);
+  --color-on-onair: var(--on-onair);
+  --color-amber: var(--amber);
+  --color-on-amber: var(--on-amber);
+  --color-amber-ink: var(--amber-ink);
+  --color-amber-wash: var(--amber-wash);
+  --color-green: var(--green);
+  --color-green-ink: var(--green-ink);
+  --color-green-wash: var(--green-wash);
+  --color-green-line: var(--green-line);
+  --color-error-ink: var(--error-ink);
+  --color-error-wash: var(--error-wash);
+  --color-off: var(--off);
+  --color-btn: var(--btn);
+  --color-btn-hover: var(--btn-hover);
+  --color-btn-line: var(--btn-line);
+  --color-primary: var(--primary);
+  --color-on-primary: var(--on-primary);
+  --color-focus: var(--focus);
+  --font-sans: var(--font-barlow), ui-sans-serif, system-ui, sans-serif;
+  --font-cond: var(--font-barlow-condensed), var(--font-barlow), ui-sans-serif,
+    sans-serif;
+  --font-caption: var(--font-atkinson), var(--font-barlow), ui-sans-serif,
+    sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  background: var(--bg);
+  color: var(--ink);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Amber hatching for "reconnecting" tallies, both themes. */
+.hatch {
+  background: repeating-linear-gradient(
+    135deg,
+    var(--amber) 0 10px,
+    color-mix(in srgb, var(--amber) 88%, #000) 10px 20px
+  );
+  color: var(--on-amber);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }
