@@ -164,7 +164,7 @@ export default function EventPage({
           aria-label={uiLang === "es" ? "Interface in English" : "Interfaz en español"}
           title={t.interfaceLanguage}
           data-testid="ui-lang-toggle"
-          className={`${buttonClass("ghost", "sm")} shrink-0 font-cond text-base tracking-wide`}
+          className={`${buttonClass("ghost", "sm")} min-w-12 shrink-0 font-cond text-base tracking-wide`}
         >
           {uiLang === "es" ? "EN" : "ES"}
         </button>

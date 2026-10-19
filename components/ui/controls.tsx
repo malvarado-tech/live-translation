@@ -45,7 +45,7 @@ export function Segmented<T extends string>({
               lang={opt.lang}
               aria-checked={selected}
               onClick={() => onChange(opt.value)}
-              className={`${h} whitespace-nowrap rounded-[5px] px-3 text-sm font-semibold transition-colors ${stretch ? "min-w-0 flex-1 truncate" : ""} ${
+              className={`${h} whitespace-nowrap rounded-[5px] px-3 text-sm font-semibold ${stretch ? "min-w-0 flex-1 truncate" : ""} ${
                 selected
                   ? "bg-primary text-on-primary"
                   : "text-ink hover:bg-btn-hover"

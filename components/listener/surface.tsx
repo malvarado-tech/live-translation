@@ -193,7 +193,7 @@ function ListenerHeader({ t, uiLang, onUiLang, title, subtitle }: ListenerSurfac
         aria-label={other === "en" ? "Interface in English" : "Interfaz en español"}
         title={t.interfaceLanguage}
         data-testid="ui-lang-toggle"
-        className={`${buttonClass("ghost", "sm")} shrink-0 font-cond text-base tracking-wide`}
+        className={`${buttonClass("ghost", "sm")} min-w-12 shrink-0 font-cond text-base tracking-wide`}
       >
         {other === "en" ? "EN" : "ES"}
       </button>
