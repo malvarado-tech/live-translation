@@ -4,11 +4,15 @@ Real-time speech translation for live talks: one speaker, one realtime translati
 
 ## What it does
 
-The app has two roles.
+The app has three surfaces.
 
-- **Operator** (`/operator`): a dashboard on the laptop that receives the speaker's audio. The operator picks the target language and audio devices, opens a room, shares the listener QR code, starts and stops translation between speakers, and follows live session telemetry (connection state, token expiry, first-token latency, listener count, estimated cost).
-- **Listeners** (`/listen/[room]`): a mobile web page opened from the QR code. It joins the room as a subscribe-only participant and plays the translated audio, with volume, mute and live captions. Nothing to install.
-- **Event page** (`/e/[event]`): one link and QR code for the whole event. It lists the languages of the event that currently have a room open, and listeners can come back to it to switch language without scanning another code.
+- **Operator** (`/operator`): a dashboard on the laptop that receives the speaker's audio. Setup takes the event ID and title, the language, the input (with a level test) and the channel type: speech translation, or the speaker's original audio for listeners of the source language. Once the room is open, the dashboard shows an input meter, an output meter and the on-air state of each language of the event, one alert at a time with its fix, the transcript, the event QR code with a projector view, and session details (connections, response time, cost, event log). Two views: **Desk** (vertical channel strips, transcript lanes below) and **Rows** (horizontal channel rows, alert slot, transcript at reading size). Keyboard: Space starts or pauses, M places a mark.
+- **Listeners** (`/listen/[room]`): a mobile web page opened from the QR code. It joins the room as a subscribe-only participant and plays the translated audio with captions. Two views: **Receiver** (channel card with live light and level meter, last caption lines, channel buttons) and **Captions** (caption stage, channel code on the language button). The page states whether the broadcast is live, paused, reconnecting or silent, rejoins on its own after a network drop, keeps the screen on while listening and shows the stream on the lock screen. The interface follows the room language (Spanish or English) and can be switched by hand.
+- **Event page** (`/e/[event]`): one link and QR code for the whole event. It lists the languages of the event that currently have a room open, with their state, and listeners can come back to it to switch language without scanning another code.
+
+Every surface has a light theme (default) and a **Night** theme for dark rooms. Theme and view are remembered per device.
+
+**Replay** (`/replay` and `/replay/operator`): a recorded 1962 speech with translated captions and AI-generated voices in Spanish and Portuguese, played through the same listener and operator views. It needs no keys and calls no server route, so it also works from a static export. Credits and licence are in `public/replay/ATTRIBUTION.txt`.
 
 Translation runs on OpenAI's `gpt-realtime-translate` model. The translated audio is fanned out through a self-hosted [LiveKit](https://livekit.io) server, so the translation cost does not grow with the number of listeners.
 
@@ -17,29 +21,36 @@ Translation runs on OpenAI's `gpt-realtime-translate` model. The translated audi
 <table>
   <tr>
     <td colspan="3">
-      <img src="docs/screenshots/operator-room-open.png" alt="Operator dashboard with a room open, listener QR code and live telemetry">
-      <p align="center"><sub>Operator dashboard with a room open: listener QR code and link, one listener connected, session telemetry.</sub></p>
-    </td>
-  </tr>
-  <tr>
-    <td width="33%">
-      <img src="docs/screenshots/listener-join.png" alt="Listener page before joining">
-      <p align="center"><sub>Listener page opened from the QR code.</sub></p>
-    </td>
-    <td width="33%">
-      <img src="docs/screenshots/listener-waiting.png" alt="Listener page connected and waiting for the speaker">
-      <p align="center"><sub>Connected and waiting for translation to start. Captions appear below.</sub></p>
-    </td>
-    <td width="33%">
-      <img src="docs/screenshots/operator-mobile.png" alt="Operator dashboard on a narrow screen">
-      <p align="center"><sub>Operator dashboard on a narrow screen.</sub></p>
+      <img src="docs/screenshots/operator-desk.png" alt="Operator dashboard, Desk view: input strip, two language strips, add language, listener QR code">
+      <p align="center"><sub>Operator, Desk view: the input and each language as a channel strip, the event QR code and what listeners see.</sub></p>
     </td>
   </tr>
   <tr>
     <td colspan="3">
-      <img src="docs/screenshots/operator-idle.png" alt="Operator dashboard before a room is opened">
-      <p align="center"><sub>Operator dashboard before a room is opened: target language, input and output devices, monitor options and transcript panels.</sub></p>
+      <img src="docs/screenshots/operator-rows-night.png" alt="Operator dashboard, Rows view, Night theme">
+      <p align="center"><sub>Operator, Rows view, Night theme.</sub></p>
     </td>
+  </tr>
+  <tr>
+    <td width="33%">
+      <img src="docs/screenshots/event-page.png" alt="Event page with the live languages">
+      <p align="center"><sub>Event page: one code, every language.</sub></p>
+    </td>
+    <td width="33%">
+      <img src="docs/screenshots/listener-receiver.png" alt="Listener, Receiver view">
+      <p align="center"><sub>Listener, Receiver view (replay).</sub></p>
+    </td>
+    <td width="33%">
+      <img src="docs/screenshots/listener-captions-night.png" alt="Listener, Captions view, Night theme">
+      <p align="center"><sub>Listener, Captions view, Night theme (replay).</sub></p>
+    </td>
+  </tr>
+  <tr>
+    <td width="33%">
+      <img src="docs/screenshots/listener-reconnecting.png" alt="Listener during a network drop">
+      <p align="center"><sub>Network drop: the page rejoins on its own.</sub></p>
+    </td>
+    <td colspan="2"></td>
   </tr>
 </table>
 
@@ -50,7 +61,7 @@ Translation runs on OpenAI's `gpt-realtime-translate` model. The translated audi
 </p>
 
 1. The operator browser requests a short-lived OpenAI client secret from the server and opens a WebRTC session with `gpt-realtime-translate`. Microphone audio goes in; translated audio and transcript come back.
-2. The operator browser requests a publish-only LiveKit token and republishes the translated audio track to the room, with caption text on a data channel.
+2. The operator browser requests a publish-only LiveKit token and republishes the translated audio track to the room, with caption text on a data channel. Its session state (waiting, live, paused, reconnecting, interrupted, ended), the event title and the last response time travel as participant attributes, so listeners and the event page know what is happening.
 3. Each listener requests a subscribe-only LiveKit token for the room and plays the track.
 
 Long-lived keys (`OPENAI_API_KEY`, `LIVEKIT_API_SECRET`, `GOOGLE_AI_API_KEY`) are read only inside Next.js route handlers. The browser only receives short-lived, scoped credentials:
@@ -60,16 +71,18 @@ Long-lived keys (`OPENAI_API_KEY`, `LIVEKIT_API_SECRET`, `GOOGLE_AI_API_KEY`) ar
 | `POST /api/session` | OpenAI ephemeral client secret for one translation session |
 | `POST /api/publish-token` | LiveKit JWT that can publish to one room (6 h TTL) |
 | `GET /api/listen-token` | LiveKit JWT that can only subscribe to one room (6 h TTL) |
-| `GET /api/event-languages` | Languages of one event that have an operator connected. No credentials are returned; results are cached for 5 s per event and requests are rate limited per client |
+| `GET /api/event-languages` | Languages of one event that have an operator connected, with each one's state and listener count. No credentials are returned; results are cached for 5 s per event and requests are rate limited per client |
 | `POST /api/gemini-token` | Gemini Live ephemeral token (experimental, not used by the UI) |
 | `POST /api/save-benchmark` | Writes the session report to `benchmarks/` on the server |
 
 A session has four steps on the operator dashboard:
 
 1. **Open room**: the QR code goes live and listeners can join and wait. Nothing is billed.
-2. **Start translation**: the OpenAI session opens and billing starts.
-3. **Stop translation**: the translation session closes but listeners stay connected. Use it between speakers and during breaks.
-4. **Close room**: everything is torn down and the session report is written.
+2. **Start translation** (or **Start original audio**): the OpenAI session opens and billing starts. Original audio sends the speaker's audio as is and bills nothing.
+3. **Pause**: the translation session closes but listeners stay connected and see "Paused between speakers". Use it between speakers and during breaks.
+4. **End session**: after a confirmation, everything is torn down, listeners see "Session ended" and the session report is written.
+
+Each language runs in its own operator tab with the same event ID ("Add language" opens one). Every tab shows the other languages of the event as strips with their state, listener count and response time, read from the room server every 5 seconds; their level meters and transcripts are only available in their own tab.
 
 Stack: Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4, `livekit-client`, `livekit-server-sdk`, `qrcode.react`.
 
@@ -160,14 +173,13 @@ The translation session bills for as long as it is open, whether or not anyone i
 - LiveKit runs in `--dev` mode. A public deployment needs a real LiveKit configuration, generated keys and TLS.
 - One target language per room. Several languages need several operator tabs with the same event ID; the event link groups them for listeners.
 - No PWA manifest; the listener page is a plain mobile web page.
-- A UI pass is pending.
 - The Gemini Live engine (`lib/gemini-live.ts`, `/api/gemini-token`) is kept in the code but hidden in the UI.
-- The latency shown is first-token latency, not end-to-end audio latency.
-- Tests cover the event page and room filtering; the translation flow itself is tested by hand.
+- The response time shown is first-token latency, not end-to-end audio latency.
+- Tests: `npm test` (unit), `npm run test:e2e` (both views and themes on every surface, contrast, 320 px layout, target sizes, replay) and `npm run check:contrast` (colour tokens). With a LiveKit dev server, `E2E_LIVEKIT=1` adds the room flow; the setup is at the top of `tests/e2e/livekit.spec.ts`. The translation engine itself is tested by hand, since it needs an OpenAI key.
 
 ## Privacy
 
-When the operator closes a room, the dashboard sends a session report to `/api/save-benchmark`, which writes it to `benchmarks/` in the project directory on the machine running the server. The report contains transcripts and, where the browser supports `MediaRecorder`, recordings of the speaker's microphone and of the translated output. Nothing is uploaded elsewhere, and the folder is git-ignored.
+When the operator ends a session, the dashboard sends a session report to `/api/save-benchmark`, which writes it to `benchmarks/` in the project directory on the machine running the server. The report contains transcripts and, where the browser supports `MediaRecorder`, recordings of the speaker's microphone and of the translated output. Nothing is uploaded elsewhere, and the folder is git-ignored.
 
 Inform speakers that sessions are recorded, or remove the recorder calls in `app/operator/page.tsx` to disable recording.
 
