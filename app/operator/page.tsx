@@ -965,15 +965,21 @@ export default function OperatorPage({
           }
         : null,
     target:
-      mode === "translate"
+      mode === "original"
         ? {
+            title: `${targetLanguage.toUpperCase()} · ${langLabel}, original audio`,
+            badge: monitor === "program" ? { text: "In your headphones", tone: "ok" } : null,
+            lines: [],
+            lang: targetLanguage,
+            placeholder: "Original audio channel: the speaker's audio goes to listeners as is, without a transcript.",
+          }
+        : {
             title: `${targetLanguage.toUpperCase()} · ${langLabel}`,
             badge: monitor === "program" ? { text: "In your headphones", tone: "ok" } : null,
             lines: targetLines,
             lang: targetLanguage,
             placeholder: live ? "Translation appears here." : "Translation appears here once it starts.",
-          }
-        : null,
+          },
     qr:
       LIVEKIT_ENABLED && session.hasRoom && eventUrl
         ? {

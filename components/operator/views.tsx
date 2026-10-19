@@ -385,7 +385,12 @@ function RowsRow({ strip, kind }: { strip: StripModel; kind: "input" | "channel"
         {kind === "input" ? "Input" : strip.tally.text}
       </Tally>
       <span className="min-w-0">
-        <span className="block font-cond text-[28px] font-bold leading-none text-ink">
+        <span
+          className={`block font-cond font-bold leading-none text-ink ${
+            kind === "input" ? "truncate text-xl" : "text-[28px]"
+          }`}
+          title={kind === "input" ? strip.label : undefined}
+        >
           {kind === "input" ? strip.label : strip.code.toUpperCase()}
         </span>
         <span className="block truncate text-sm text-silk" lang={strip.lang}>
