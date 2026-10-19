@@ -43,3 +43,7 @@ next-env.d.ts
 
 # local session reports and audio recordings
 /benchmarks/
+
+# playwright
+/test-results/
+/playwright-report/

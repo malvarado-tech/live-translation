@@ -8,8 +8,12 @@ Follow the [Quick start](README.md#quick-start) in the README. Before opening a 
 
 ```bash
 npm run lint
+npm test
 npm run build
+npm run test:e2e
 ```
+
+`npm test` runs the unit tests with the Node test runner. `npm run test:e2e` runs the Playwright tests against the production build from `npm run build`; install the browser once with `npx playwright install chromium`. The end-to-end tests expect no LiveKit credentials in the environment.
 
 The build must pass with every environment variable empty. `npm run lint` currently reports three existing `react-hooks/set-state-in-effect` errors; a change should not add new findings.
 
