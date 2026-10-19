@@ -102,7 +102,7 @@ export function useOperatorView() {
 }
 
 export function useListenerView() {
-  return usePref<ListenerView>("lt.view.listener", "receiver", LISTENER_VIEWS);
+  return usePref<ListenerView>("lt.view.listener", "captions", LISTENER_VIEWS);
 }
 
 export function useTextSize() {

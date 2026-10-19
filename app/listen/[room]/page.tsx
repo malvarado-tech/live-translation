@@ -21,7 +21,7 @@ import {
   type ListenerConnection,
   type OperatorSignal,
 } from "@/lib/listener-health";
-import { LISTENER_STRINGS, uiLangForRoom } from "@/lib/listener-strings";
+import { channelState, LISTENER_STRINGS, uiLangForRoom } from "@/lib/listener-strings";
 import { CAPTION_TOPIC, type CaptionMessage } from "@/lib/livekit-publisher";
 import { useUiLang } from "@/lib/prefs";
 import { parseOperatorStatus, STATUS_ATTR } from "@/lib/session-status";
@@ -365,17 +365,16 @@ export default function ListenerPage({
     const list = channels.some((c) => c.room === room)
       ? channels
       : [...channels, { code: langCode ?? "", label: languageLabel(langCode ?? ""), room }];
-    return list.map((c, i) => ({
+    return list.map((c) => ({
       code: c.code,
       label: c.label,
       lang: c.code,
-      number: i + 1,
       active: c.room === room,
+      stateLabel: "status" in c && c.status ? channelState(c.status, t).text : undefined,
       href: `/listen/${encodeURIComponent(c.room)}?event=${encodeURIComponent(eventSlug)}`,
     }));
-  }, [channels, eventSlug, room, langCode]);
+  }, [channels, eventSlug, room, langCode, t]);
 
-  const channelNumber = channelList.find((c) => c.active)?.number ?? null;
   const title = operator.title ?? eventTitle ?? t.liveTranslation;
   const label = langCode ? languageLabel(langCode) : t.liveTranslation;
   const connected = connection === "connected" || connection === "reconnecting" || connection === "rejoining";
@@ -402,11 +401,9 @@ export default function ListenerPage({
         uiLang={uiLang}
         onUiLang={setUiLang}
         title={title}
-        subtitle={operator.title || eventTitle ? t.liveTranslation : null}
         channel={{
           code: langCode ?? "--",
           label: operator.mode === "original" ? `${label}, ${t.originalAudio}` : label,
-          number: channelNumber,
           lang: langCode ?? uiLang,
         }}
         status={display}

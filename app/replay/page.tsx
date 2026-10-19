@@ -74,11 +74,10 @@ export default function ReplayPage() {
               : "idle";
   const tone = status === "replay-playing" ? "replay" : status === "unavailable" ? "error" : "standby";
 
-  const listChannels: ListenerChannel[] = channels.map((c, i) => ({
+  const listChannels: ListenerChannel[] = channels.map((c) => ({
     code: c.code,
     label: c.original ? `${c.label}, ${t.originalAudio}` : c.label,
     lang: c.bcp47,
-    number: i + 1,
     active: c.code === channel?.code,
     onSelect: () => setSelected(c.code),
   }));
@@ -110,12 +109,10 @@ export default function ReplayPage() {
         uiLang={uiLang}
         onUiLang={setUiLang}
         title={titles.title}
-        subtitle={titles.subtitle}
         badge={t.replayLabel}
         channel={{
           code: channel?.code ?? "--",
           label: channel ? (channel.original ? `${channel.label}, ${t.originalAudio}` : channel.label) : "",
-          number: channel ? channels.indexOf(channel) + 1 : null,
           lang: channel?.bcp47 ?? uiLang,
         }}
         status={status}
@@ -144,19 +141,24 @@ export default function ReplayPage() {
         }
         footer={
           manifest ? (
-            <footer className="flex flex-col gap-1 border-t border-line pt-3 text-sm text-silk" data-testid="replay-attribution">
-              <p className="font-semibold text-ink">{t.attribution}</p>
-              <p>{uiLang === "es" ? ATTRIBUTION_ES : manifest.source.attribution}</p>
-              <p>
-                <a className="underline underline-offset-4" href={manifest.source.source_url} rel="noopener" target="_blank">
-                  Wikimedia Commons
-                </a>
-                {" · "}
-                <a className="underline underline-offset-4" href={manifest.source.license_url} rel="noopener" target="_blank">
-                  {manifest.source.license}
-                </a>
-              </p>
-            </footer>
+            <details className="border-t border-line pt-1 text-sm text-silk" data-testid="replay-attribution">
+              <summary className="flex min-h-11 cursor-pointer items-center font-semibold text-ink underline underline-offset-4">
+                {t.attribution}
+              </summary>
+              <div className="flex flex-col gap-1 pb-1">
+                <p className="text-ink">{titles.subtitle}</p>
+                <p>{uiLang === "es" ? ATTRIBUTION_ES : manifest.source.attribution}</p>
+                <p>
+                  <a className="underline underline-offset-4" href={manifest.source.source_url} rel="noopener" target="_blank">
+                    Wikimedia Commons
+                  </a>
+                  {" · "}
+                  <a className="underline underline-offset-4" href={manifest.source.license_url} rel="noopener" target="_blank">
+                    {manifest.source.license}
+                  </a>
+                </p>
+              </div>
+            </details>
           ) : null
         }
       />

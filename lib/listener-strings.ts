@@ -52,7 +52,6 @@ export type ListenerStrings = {
   noSignal: string;
   delay: (seconds: string) => string;
   attempt: (n: number, of: number) => string;
-  lastCaption: string;
   captionsPending: string;
   noCaptions: string;
   headphones: string;
@@ -77,7 +76,8 @@ export type ListenerStrings = {
   position: string;
   attribution: string;
   audioBlocked: string;
-  displayOptions: string;
+  options: string;
+  stopAudio: string;
   close: string;
 };
 
@@ -102,7 +102,6 @@ export const LISTENER_STRINGS: Record<ListenerLang, ListenerStrings> = {
     noSignal: "Sin señal",
     delay: (s) => `Retraso ${s} s`,
     attempt: (n, of) => `Intento ${n} de ${of}`,
-    lastCaption: "Último subtítulo",
     captionsPending: "Los subtítulos aparecen con el audio.",
     noCaptions: "Canal sin subtítulos.",
     headphones: "Uso de audífonos recomendado.",
@@ -161,7 +160,8 @@ export const LISTENER_STRINGS: Record<ListenerLang, ListenerStrings> = {
     attribution: "Créditos",
     audioBlocked:
       "Reproducción bloqueada por el navegador. Un toque en «Escuchar» la activa.",
-    displayOptions: "Opciones de pantalla",
+    options: "Opciones",
+    stopAudio: "Detener audio",
     close: "Cerrar",
   },
   en: {
@@ -184,7 +184,6 @@ export const LISTENER_STRINGS: Record<ListenerLang, ListenerStrings> = {
     noSignal: "No signal",
     delay: (s) => `Delay ${s} s`,
     attempt: (n, of) => `Attempt ${n} of ${of}`,
-    lastCaption: "Last caption",
     captionsPending: "Captions appear with the audio.",
     noCaptions: "Channel without captions.",
     headphones: "Headphones recommended.",
@@ -242,10 +241,36 @@ export const LISTENER_STRINGS: Record<ListenerLang, ListenerStrings> = {
     position: "Position",
     attribution: "Credits",
     audioBlocked: "Playback blocked by the browser. A tap on Listen enables it.",
-    displayOptions: "Display options",
+    options: "Options",
+    stopAudio: "Stop audio",
     close: "Close",
   },
 };
+
+/**
+ * The state of one event language as listeners see it in a list, from the
+ * operator status published for that room.
+ */
+export function channelState(
+  status: { state?: string | null; mode?: string | null } | undefined,
+  t: ListenerStrings,
+): { text: string; live: boolean } {
+  const s = status?.state;
+  if (status?.mode === "original" && (s === "live" || !s)) {
+    return { text: t.channelStates.live, live: true };
+  }
+  switch (s) {
+    case "paused":
+      return { text: t.channelStates.paused, live: false };
+    case "waiting":
+      return { text: t.channelStates.waiting, live: false };
+    case "reconnecting":
+    case "interrupted":
+      return { text: t.channelStates.reconnecting, live: false };
+    default:
+      return { text: t.channelStates.live, live: true };
+  }
+}
 
 /** The listener interface language that follows a room language. */
 export function uiLangForRoom(code: string | null): ListenerLang {

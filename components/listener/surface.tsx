@@ -2,17 +2,22 @@
 
 /**
  * Listener surface shared by the live listener page and the replay page.
+ *
+ * Always on screen: the event title, the current language (the button that
+ * changes it), the captions, one status line and Mute (or Listen). View,
+ * theme, text size, interface language and stopping the audio sit behind
+ * one Options control.
+ *
  * Two views over one model:
- *  - Receiver: a channel card (large code, live light, level meter), the
- *    last two caption lines and channel buttons, like an interpretation
- *    receiver.
- *  - Captions: a caption stage, the channel code on the language button and
- *    a small level indicator.
- * Both keep the main controls in the bottom thumb zone (56 px and up).
+ *  - Captions (default): a caption stage.
+ *  - Receiver: a channel card with the large language code and the level
+ *    meter, and the last two caption lines, like an interpretation receiver.
  */
 import Link from "next/link";
-import { useId, useState, type ReactNode } from "react";
-import { buttonClass, HMeter, Segmented, toggleClass } from "@/components/ui/controls";
+import { useState, type ReactNode } from "react";
+import { ListenerOptions } from "@/components/listener/options";
+import { buttonClass, HMeter } from "@/components/ui/controls";
+import { Sheet } from "@/components/ui/sheet";
 import type { CaptionLine } from "@/lib/captions";
 import type { ListenerTone } from "@/lib/listener-health";
 import type {
@@ -20,17 +25,11 @@ import type {
   ListenerStatusKey,
   ListenerStrings,
 } from "@/lib/listener-strings";
-import {
-  useListenerView,
-  useTextSize,
-  useTheme,
-  type TextSize,
-} from "@/lib/prefs";
+import { useListenerView, useTextSize, type TextSize } from "@/lib/prefs";
 
 export type ListenerChannel = {
   code: string;
   label: string;
-  number: number;
   active: boolean;
   /** Link to the channel (live) or a callback (replay). */
   href?: string;
@@ -48,11 +47,10 @@ export type ListenerSurfaceProps = {
   uiLang: ListenerLang;
   onUiLang: (l: ListenerLang) => void;
   title: string;
-  subtitle?: string | null;
-  channel: { code: string; label: string; number: number | null; lang: string };
+  channel: { code: string; label: string; lang: string };
   status: ListenerStatusKey;
   tone: ListenerTone;
-  /** Extra line under the status, e.g. "Attempt 2 of 5". */
+  /** Extra text on the status line, e.g. "Attempt 2 of 5". */
   statusDetail?: string | null;
   level: number | null;
   delaySeconds?: number | null;
@@ -65,21 +63,12 @@ export type ListenerSurfaceProps = {
   changeLanguageHref?: string | null;
   /** Replay transport (play/pause, scrub). */
   transport?: ReactNode;
-  /** Attribution or other notes under the controls. */
+  /** Credits or other notes at the bottom. */
   footer?: ReactNode;
   /** A notice above the controls, e.g. blocked autoplay. */
   notice?: string | null;
-  /** A standing label under the header, e.g. what a replay is. */
+  /** A short standing label under the title, e.g. what a replay is. */
   badge?: string | null;
-};
-
-const TALLY_CLASS: Record<ListenerTone, string> = {
-  live: "bg-onair text-on-onair border-onair",
-  warn: "hatch border-amber",
-  standby: "border-dashed border-line-strong text-silk",
-  off: "border-line-strong text-silk",
-  error: "bg-error-wash text-error-ink border-error-ink",
-  replay: "bg-primary text-on-primary border-primary",
 };
 
 const DOT_CLASS: Record<ListenerTone, string> = {
@@ -102,50 +91,38 @@ const SIZES: Record<TextSize, { old: number; cur: number; rOld: number; rCur: nu
   xl: { old: 31, cur: 41, rOld: 25, rCur: 32 },
 };
 
-const NEXT_SIZE: Record<TextSize, TextSize> = { m: "l", l: "xl", xl: "m" };
+/** Captions are current only while audio is flowing. */
+function staleCaptions(status: ListenerStatusKey) {
+  return (
+    status !== "live" &&
+    status !== "idle" &&
+    status !== "replay-playing" &&
+    status !== "replay-paused" &&
+    status !== "replay-loading"
+  );
+}
 
 export function ListenerSurface(props: ListenerSurfaceProps) {
-  const [view, setView] = useListenerView();
-  const [theme, setTheme] = useTheme();
-  const [size, setSize] = useTextSize();
-  const { t } = props;
+  const [view] = useListenerView();
+  const [size] = useTextSize();
 
   return (
     <div
-      className="mx-auto flex min-h-dvh w-full max-w-md flex-col gap-4 px-4 pb-[max(16px,env(safe-area-inset-bottom))] pt-4"
+      className="mx-auto flex min-h-dvh w-full max-w-md flex-col gap-4 px-4 pb-[max(16px,env(safe-area-inset-bottom))] pt-3"
       data-testid="listener-surface"
       data-view={view}
       lang={props.uiLang}
     >
-      <ListenerHeader {...props} />
-      {props.badge ? (
-        <p className="rounded-md border border-line-strong px-3 py-2 text-[15px] font-medium text-ink" data-testid="listener-badge">
-          {props.badge}
-        </p>
-      ) : null}
-      <div className="flex items-center gap-2">
-        <Segmented
-          label={t.view}
-          value={view}
-          onChange={setView}
-          options={[
-            { value: "receiver", label: t.views.receiver },
-            { value: "captions", label: t.views.captions },
-          ]}
-          testId="listener-view-switch"
-          stretch
-          className="flex-1"
-        />
-        <button
-          type="button"
-          onClick={() => setTheme(theme === "night" ? "light" : "night")}
-          aria-pressed={theme === "night"}
-          data-testid="theme-toggle"
-          className={`inline-flex min-h-11 shrink-0 items-center rounded-md border px-3 text-sm font-semibold ${toggleClass(theme === "night")}`}
-        >
-          {t.themes.night}
-        </button>
-      </div>
+      <header className="flex flex-col gap-0.5">
+        <h1 className="truncate text-xl font-semibold leading-tight text-ink" title={props.title}>
+          {props.title}
+        </h1>
+        {props.badge ? (
+          <p className="text-sm text-silk" data-testid="listener-badge">
+            {props.badge}
+          </p>
+        ) : null}
+      </header>
 
       {view === "receiver" ? (
         <ReceiverBody {...props} size={size} />
@@ -153,6 +130,7 @@ export function ListenerSurface(props: ListenerSurfaceProps) {
         <CaptionsBody {...props} size={size} />
       )}
 
+      <StatusLine {...props} />
       <StatusAnnouncer {...props} />
 
       {props.notice ? (
@@ -163,41 +141,10 @@ export function ListenerSurface(props: ListenerSurfaceProps) {
 
       {props.transport}
 
-      <ThumbBar
-        {...props}
-        size={size}
-        onSize={() => setSize(NEXT_SIZE[size])}
-      />
+      <ThumbBar {...props} />
 
       {props.footer}
     </div>
-  );
-}
-
-function ListenerHeader({ t, uiLang, onUiLang, title, subtitle }: ListenerSurfaceProps) {
-  const other: ListenerLang = uiLang === "es" ? "en" : "es";
-  return (
-    <header className="flex items-start justify-between gap-3">
-      <div className="min-w-0">
-        <h1 className="text-xl font-semibold leading-tight text-ink [overflow-wrap:anywhere]">
-          {title}
-        </h1>
-        {subtitle ? (
-          <p className="mt-0.5 text-[15px] text-silk">{subtitle}</p>
-        ) : null}
-      </div>
-      <button
-        type="button"
-        onClick={() => onUiLang(other)}
-        lang={other}
-        aria-label={other === "en" ? "Interface in English" : "Interfaz en español"}
-        title={t.interfaceLanguage}
-        data-testid="ui-lang-toggle"
-        className={`${buttonClass("ghost", "sm")} min-w-12 shrink-0 font-cond text-base tracking-wide`}
-      >
-        {other === "en" ? "EN" : "ES"}
-      </button>
-    </header>
   );
 }
 
@@ -211,140 +158,150 @@ function StatusAnnouncer({ t, status, statusDetail }: ListenerSurfaceProps) {
   );
 }
 
-function delayText(t: ListenerStrings, s: number | null | undefined, tone: ListenerTone) {
-  if (!signalTone(tone)) return t.noSignal;
-  if (s == null) return "";
-  return t.delay(s.toFixed(1));
-}
-
-function showsStatusMessage(status: ListenerStatusKey) {
+/** The one visible status line: what the audio is doing right now. */
+function StatusLine({ t, status, tone, statusDetail }: ListenerSurfaceProps) {
+  const text = status === "live" ? t.status.live.tally : t.status[status].line;
+  const box =
+    tone === "warn"
+      ? "rounded-md border border-amber bg-amber-wash px-3 py-2"
+      : tone === "error"
+        ? "rounded-md border border-error-ink bg-error-wash px-3 py-2"
+        : "";
   return (
-    status !== "live" &&
-    status !== "idle" &&
-    status !== "replay-playing" &&
-    status !== "replay-paused" &&
-    status !== "replay-loading"
+    <p className={`flex items-start gap-2.5 text-lg ${box}`} data-testid="listener-status-line">
+      <span className={`mt-[0.45em] h-3 w-3 shrink-0 rounded-full ${DOT_CLASS[tone]}`} />
+      <span className="min-w-0">
+        <span
+          className={`font-semibold ${tone === "error" ? "text-error-ink" : "text-ink"}`}
+          data-testid="listener-tally"
+          data-tone={tone}
+        >
+          {text}
+        </span>
+        {statusDetail ? <span className="text-silk"> {statusDetail}</span> : null}
+      </span>
+    </p>
   );
 }
 
-function ReceiverBody(props: ListenerSurfaceProps & { size: TextSize }) {
-  const { t, channel, status, tone, level, lines, size, channels } = props;
-  const sz = SIZES[size];
-  const tail = lines.slice(-2);
+/* --------------------------------------------------------------- language */
+
+function Chevron() {
+  return (
+    <svg aria-hidden width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 6l4 4 4-4" />
+    </svg>
+  );
+}
+
+/**
+ * The current language. When the event has other languages it is the
+ * button that changes it; on a direct link it is a plain label.
+ */
+function LanguageControl({
+  props,
+  large = false,
+}: {
+  props: ListenerSurfaceProps;
+  large?: boolean;
+}) {
+  const { t, channel } = props;
+  const [open, setOpen] = useState(false);
+  const canSwitch = props.channels.length > 1 || Boolean(props.changeLanguageHref);
+
+  const inner = large ? (
+    <>
+      <span className="font-cond text-[76px] font-bold leading-[0.85] tracking-tight text-ink" aria-hidden>
+        {channel.code.toUpperCase()}
+      </span>
+      <span className="min-w-0 flex-1 pb-1">
+        <span className="block truncate text-xl font-semibold text-ink" lang={channel.lang}>
+          {channel.label}
+        </span>
+        {canSwitch ? (
+          <span className="mt-0.5 flex items-center gap-1 text-[15px] text-silk">
+            {t.changeLanguage} <Chevron />
+          </span>
+        ) : null}
+      </span>
+    </>
+  ) : (
+    <>
+      <span className="min-w-0 flex-1 truncate text-lg font-semibold text-ink" lang={channel.lang}>
+        {channel.label}
+      </span>
+      {canSwitch ? (
+        <span className="text-silk">
+          <Chevron />
+        </span>
+      ) : null}
+    </>
+  );
+
+  const cls = large
+    ? "-m-2 flex min-h-14 min-w-0 items-end gap-4 rounded-md p-2 text-left"
+    : "flex min-h-14 w-full min-w-0 items-center gap-3 rounded-md border border-line bg-panel px-4 text-left";
+
+  if (!canSwitch) {
+    return (
+      <div className={cls} data-testid="language-current">
+        {inner}
+      </div>
+    );
+  }
+
   return (
     <>
-      <section
-        aria-label={`${t.channel} ${channel.number ?? ""} ${channel.label}`}
-        className="rounded-lg border border-line bg-panel p-5"
-        data-testid="receiver-card"
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-label={`${channel.label}. ${t.changeLanguage}`}
+        data-testid="language-button"
+        className={`${cls} hover:bg-panel-2`}
       >
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            {channel.number !== null ? (
-              <p className="font-cond text-lg font-semibold text-silk">
-                {t.channel} {channel.number}
-              </p>
-            ) : null}
-            <p
-              className="font-cond text-[88px] font-bold leading-[0.85] tracking-tight text-ink"
-              aria-hidden
-            >
-              {channel.code.toUpperCase()}
-            </p>
-          </div>
-          <span
-            data-testid="listener-tally"
-            data-tone={tone}
-            className={`inline-flex min-h-11 items-center rounded-md border px-3 font-cond text-xl font-bold tracking-[0.04em] ${TALLY_CLASS[tone]}`}
-          >
-            {t.status[status].tally}
-          </span>
-        </div>
-        <p className="mt-3 text-lg text-silk" lang={channel.lang}>
-          {channel.label}
-        </p>
-        <div className="mt-5">
-          <HMeter level={signalTone(tone) ? level : null} label={t.audioLevel} testId="listener-meter" />
-          <div className="mt-2 flex justify-between gap-2 text-[15px] text-silk">
-            <span>{t.audioLevel}</span>
-            <span className="tabular">{delayText(t, props.delaySeconds, tone)}</span>
-          </div>
-        </div>
-      </section>
-
-      {showsStatusMessage(status) ? (
-        <div data-testid="listener-status-message">
-          <p className="text-[22px] font-semibold leading-snug text-ink">
-            {t.status[status].line}
-          </p>
-          {props.statusDetail ? (
-            <p className="mt-1 text-base text-silk">{props.statusDetail}</p>
-          ) : null}
-        </div>
-      ) : null}
-
-      <div className="flex flex-1 flex-col justify-end gap-2 font-caption" lang={channel.lang} data-testid="caption-tail">
-        {!props.captionsAvailable ? (
-          <p className="text-base text-silk">{t.noCaptions}</p>
-        ) : tail.length === 0 ? (
-          status === "live" || status === "replay-playing" ? (
-            <p className="text-base text-silk">{t.captionsPending}</p>
-          ) : null
-        ) : (
-          tail.map((line, i) => {
-            const current = i === tail.length - 1;
-            return (
-              <p
-                key={line.id}
-                className={current ? "font-bold text-ink" : "text-dim"}
-                style={{
-                  fontSize: current ? sz.rCur : sz.rOld,
-                  lineHeight: 1.3,
-                }}
-              >
-                {line.text}
-              </p>
-            );
-          })
-        )}
-      </div>
-
-      {channels.length > 1 ? (
-        <nav aria-label={t.changeLanguage} className="grid grid-cols-3 gap-2" data-testid="channel-buttons">
-          {channels.map((c) => (
-            <ChannelButton key={c.code} channel={c} />
+        {inner}
+      </button>
+      <Sheet
+        open={open}
+        onClose={() => setOpen(false)}
+        title={t.changeLanguage}
+        closeLabel={t.close}
+        testId="language-sheet"
+        lang={props.uiLang}
+      >
+        <ul className="flex flex-col gap-2">
+          {props.channels.map((c) => (
+            <li key={c.code}>
+              <ChannelItem channel={c} onPicked={() => setOpen(false)} />
+            </li>
           ))}
-        </nav>
-      ) : props.changeLanguageHref ? (
-        <Link href={props.changeLanguageHref} className={buttonClass("ghost", "md")}>
-          {t.changeLanguage}
-        </Link>
-      ) : null}
+        </ul>
+        {props.changeLanguageHref ? (
+          <Link
+            href={props.changeLanguageHref}
+            className="flex min-h-11 items-center font-semibold text-ink underline underline-offset-4"
+          >
+            {t.languageSelection}
+          </Link>
+        ) : null}
+      </Sheet>
     </>
   );
 }
 
-function ChannelButton({ channel: c }: { channel: ListenerChannel }) {
-  const cls = `flex min-h-14 items-center justify-center gap-2 rounded-md border px-2 transition ${
-    c.active
-      ? "border-green bg-panel-2 ring-1 ring-green"
-      : "border-line bg-panel hover:bg-panel-2"
+function ChannelItem({ channel: c, onPicked }: { channel: ListenerChannel; onPicked: () => void }) {
+  const cls = `flex min-h-14 w-full items-center gap-3 rounded-md border px-4 text-left ${
+    c.active ? "border-green bg-panel-2" : "border-line bg-panel hover:bg-panel-2"
   }`;
   const inner = (
     <>
-      <span
-        aria-hidden
-        className={`h-2.5 w-2.5 rounded-full ${c.active ? "bg-green" : "bg-dim"}`}
-      />
-      <span className="font-cond text-lg text-silk" aria-hidden>
-        {c.number}
-      </span>
-      <span className="font-cond text-2xl font-bold text-ink" aria-hidden>
-        {c.code.toUpperCase()}
-      </span>
-      <span className="sr-only" lang={c.lang}>
+      <span className="min-w-0 flex-1 truncate text-lg font-semibold text-ink" lang={c.lang}>
         {c.label}
       </span>
+      {c.stateLabel ? <span className="shrink-0 text-[15px] text-silk">{c.stateLabel}</span> : null}
+      {c.active ? <span aria-hidden className="h-3 w-3 shrink-0 rounded-full bg-green" /> : null}
     </>
   );
   if (c.href && !c.active) {
@@ -357,7 +314,10 @@ function ChannelButton({ channel: c }: { channel: ListenerChannel }) {
   return (
     <button
       type="button"
-      onClick={c.active ? undefined : c.onSelect}
+      onClick={() => {
+        onPicked();
+        if (!c.active) c.onSelect?.();
+      }}
       aria-current={c.active ? "true" : undefined}
       className={cls}
       data-testid={`channel-${c.code}`}
@@ -367,79 +327,72 @@ function ChannelButton({ channel: c }: { channel: ListenerChannel }) {
   );
 }
 
-function CaptionsBody(props: ListenerSurfaceProps & { size: TextSize }) {
-  const { t, channel, status, tone, level, lines, size } = props;
+/* ------------------------------------------------------------------ views */
+
+function ReceiverBody(props: ListenerSurfaceProps & { size: TextSize }) {
+  const { t, status, tone, level, lines, size } = props;
   const sz = SIZES[size];
-  const [open, setOpen] = useState(false);
-  const sheetId = useId();
+  const tail = lines.slice(-2);
+  const stale = staleCaptions(status);
+  return (
+    <>
+      <section
+        aria-label={props.channel.label}
+        className="flex flex-col gap-4 rounded-lg border border-line bg-panel p-4"
+        data-testid="receiver-card"
+      >
+        <LanguageControl props={props} large />
+        <div>
+          <HMeter level={signalTone(tone) ? level : null} label={t.audioLevel} testId="listener-meter" />
+          <div className="mt-2 flex justify-between gap-2 text-[15px] text-silk">
+            <span>{t.audioLevel}</span>
+            {!signalTone(tone) ? (
+              <span>{t.noSignal}</span>
+            ) : props.delaySeconds != null ? (
+              <span className="tabular">{t.delay(props.delaySeconds.toFixed(1))}</span>
+            ) : null}
+          </div>
+        </div>
+      </section>
+
+      <div className="flex flex-1 flex-col justify-end gap-2 font-caption" lang={props.channel.lang} data-testid="caption-tail">
+        {!props.captionsAvailable ? (
+          <p className="text-base text-silk">{t.noCaptions}</p>
+        ) : tail.length === 0 ? (
+          status === "live" || status === "replay-playing" ? (
+            <p className="text-base text-silk">{t.captionsPending}</p>
+          ) : null
+        ) : (
+          tail.map((line, i) => {
+            const current = i === tail.length - 1;
+            return (
+              <p
+                key={line.id}
+                className={current && !stale ? "font-bold text-ink" : current ? "font-bold text-silk" : "text-dim"}
+                style={{ fontSize: current ? sz.rCur : sz.rOld, lineHeight: 1.3 }}
+              >
+                {line.text}
+              </p>
+            );
+          })
+        )}
+      </div>
+    </>
+  );
+}
+
+function CaptionsBody(props: ListenerSurfaceProps & { size: TextSize }) {
+  const { t, status, lines, size } = props;
+  const sz = SIZES[size];
   const visible = lines.slice(-12);
-  const canSwitch = props.channels.length > 1 || Boolean(props.changeLanguageHref);
-  const silentSince = !showsStatusMessage(status) ? null : t.status[status].line;
+  const stale = staleCaptions(status);
 
   return (
     <>
-      <div className="flex items-center justify-between gap-3">
-        <button
-          type="button"
-          onClick={() => setOpen((o) => !o)}
-          disabled={!canSwitch}
-          aria-expanded={canSwitch ? open : undefined}
-          aria-controls={canSwitch ? sheetId : undefined}
-          data-testid="language-button"
-          className="flex min-h-14 min-w-0 flex-1 items-center gap-3 rounded-full border border-line bg-panel px-3 text-left disabled:cursor-default"
-        >
-          <span className="rounded-full bg-primary px-2.5 py-0.5 font-cond text-lg font-bold text-on-primary">
-            {channel.code.toUpperCase()}
-          </span>
-          <span className="min-w-0 flex-1 truncate text-lg font-semibold text-ink" lang={channel.lang}>
-            {channel.label}
-          </span>
-          {canSwitch ? (
-            <span aria-hidden className="pr-2 text-silk">
-              {open ? "▴" : "▾"}
-            </span>
-          ) : null}
-          <span className="sr-only">{t.changeLanguage}</span>
-        </button>
-      </div>
-
-      {open && canSwitch ? (
-        <div id={sheetId} className="flex flex-col gap-2 rounded-lg border border-line bg-panel p-2" data-testid="language-sheet">
-          {props.channels.map((c) =>
-            c.href && !c.active ? (
-              <Link key={c.code} href={c.href} className="flex min-h-14 items-center gap-3 rounded-md px-3 hover:bg-panel-2">
-                <span className="font-cond text-xl font-bold">{c.code.toUpperCase()}</span>
-                <span lang={c.lang}>{c.label}</span>
-                {c.stateLabel ? <span className="ml-auto text-sm text-silk">{c.stateLabel}</span> : null}
-              </Link>
-            ) : (
-              <button
-                key={c.code}
-                type="button"
-                onClick={() => {
-                  setOpen(false);
-                  if (!c.active) c.onSelect?.();
-                }}
-                aria-current={c.active ? "true" : undefined}
-                className={`flex min-h-14 items-center gap-3 rounded-md px-3 text-left hover:bg-panel-2 ${c.active ? "bg-panel-2" : ""}`}
-              >
-                <span className="font-cond text-xl font-bold">{c.code.toUpperCase()}</span>
-                <span lang={c.lang}>{c.label}</span>
-                {c.active ? <span aria-hidden className="ml-auto h-2.5 w-2.5 rounded-full bg-green" /> : null}
-              </button>
-            ),
-          )}
-          {props.changeLanguageHref ? (
-            <Link href={props.changeLanguageHref} className="flex min-h-12 items-center rounded-md px-3 font-semibold text-ink underline underline-offset-4">
-              {t.languageSelection}
-            </Link>
-          ) : null}
-        </div>
-      ) : null}
-
+      <LanguageControl props={props} />
       <div
         className="relative flex min-h-48 flex-1 flex-col justify-end gap-3 overflow-hidden font-caption [mask-image:linear-gradient(to_bottom,transparent,black_18%)]"
-        lang={channel.lang}
+        lang={props.channel.lang}
         data-testid="caption-stage"
       >
         {!props.captionsAvailable ? (
@@ -449,7 +402,6 @@ function CaptionsBody(props: ListenerSurfaceProps & { size: TextSize }) {
         ) : (
           visible.map((line, i) => {
             const current = i === visible.length - 1;
-            const stale = showsStatusMessage(status);
             return (
               <p
                 key={line.id}
@@ -462,64 +414,11 @@ function CaptionsBody(props: ListenerSurfaceProps & { size: TextSize }) {
           })
         )}
       </div>
-
-      {silentSince ? (
-        <div
-          className="rounded-lg border border-amber bg-amber-wash px-4 py-3"
-          data-testid="listener-status-message"
-        >
-          <p className="flex items-center gap-2 text-lg font-bold text-amber-ink">
-            <span aria-hidden className={`h-3 w-3 rounded-full ${DOT_CLASS[tone]}`} />
-            {t.status[status].tally}
-          </p>
-          <p className="mt-1 text-base text-ink">{silentSince}</p>
-          {props.statusDetail ? <p className="mt-1 text-[15px] text-silk">{props.statusDetail}</p> : null}
-        </div>
-      ) : (
-        <div className="flex items-center justify-between gap-3">
-          <p className="flex items-center gap-2 text-lg">
-            <span aria-hidden className={`h-3 w-3 rounded-full ${DOT_CLASS[tone]}`} />
-            <span className="font-bold text-ink" data-testid="listener-tally" data-tone={tone}>
-              {t.status[status].tally}
-            </span>
-            {tone === "live" && props.delaySeconds != null ? (
-              <span className="tabular text-silk">· {t.delay(props.delaySeconds.toFixed(1)).toLowerCase()}</span>
-            ) : null}
-          </p>
-          <MiniLevel level={signalTone(tone) ? level : null} label={t.audioLevel} />
-        </div>
-      )}
     </>
   );
 }
 
-function MiniLevel({ level, label }: { level: number | null; label: string }) {
-  const bars = [0.25, 0.55, 0.85, 0.5, 0.7];
-  const l = level ?? 0;
-  return (
-    <span
-      role="meter"
-      aria-label={label}
-      aria-valuemin={0}
-      aria-valuemax={100}
-      aria-valuenow={Math.round(l * 100)}
-      data-testid="listener-meter"
-      data-level={level === null ? "none" : l.toFixed(2)}
-      className="flex h-8 items-center gap-[3px]"
-    >
-      {bars.map((b, i) => (
-        <i
-          key={i}
-          className={`block w-[4px] rounded-full ${l > 0.05 ? "bg-meter-green" : "bg-off"}`}
-          style={{ height: `${Math.max(6, Math.round(32 * Math.min(1, b * (0.35 + l * 1.3))))}px` }}
-        />
-      ))}
-    </span>
-  );
-}
-
-function ThumbBar(props: ListenerSurfaceProps & { size: TextSize; onSize: () => void }) {
-  const { t, primary, onLeave, size, onSize } = props;
+function ThumbBar({ t, primary, uiLang, onUiLang, onLeave }: ListenerSurfaceProps) {
   return (
     <div className="flex gap-2" data-testid="thumb-bar">
       {primary.kind === "listen" ? (
@@ -543,26 +442,7 @@ function ThumbBar(props: ListenerSurfaceProps & { size: TextSize; onSize: () => 
           {primary.muted ? t.unmute : t.mute}
         </button>
       )}
-      <button
-        type="button"
-        onClick={onSize}
-        aria-label={`${t.textSize}: ${t.textSizes[size]}`}
-        title={t.textSize}
-        className={`${buttonClass("default", "xl")} w-16 shrink-0 px-0`}
-        data-testid="text-size-button"
-      >
-        <span aria-hidden className="font-caption text-xl">Aa</span>
-      </button>
-      {onLeave ? (
-        <button
-          type="button"
-          onClick={onLeave}
-          className={`${buttonClass("ghost", "xl")} shrink-0 px-3 text-base text-silk`}
-          data-testid="leave-button"
-        >
-          {t.leave}
-        </button>
-      ) : null}
+      <ListenerOptions t={t} uiLang={uiLang} onUiLang={onUiLang} onStop={onLeave} />
     </div>
   );
 }
