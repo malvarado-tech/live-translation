@@ -2,9 +2,9 @@
  * Operator-side LiveKit publisher.
  *
  * Two-phase by design:
- *   1. startPublisher() — connects to the LiveKit room (creates it, holds it
+ *   1. startPublisher() connects to the LiveKit room (creates it, holds it
  *      open). Listeners can join and wait. No audio yet.
- *   2. publisher.publishTrack(track) — publishes a translated-audio track once
+ *   2. publisher.publishTrack(track) publishes a translated-audio track once
  *      translation actually starts. unpublishTrack() removes it (e.g. between
  *      speakers) without tearing down the room.
  *
@@ -18,12 +18,19 @@ import {
   type RoomConnectOptions,
 } from "livekit-client";
 
-export type PublisherStatus = "connecting" | "live" | "closed" | "error";
+export type PublisherStatus =
+  | "connecting"
+  | "live"
+  | "reconnecting"
+  | "closed"
+  | "error";
 
 export type PublisherEvent =
   | { type: "status"; status: PublisherStatus }
   | { type: "error"; message: string }
-  | { type: "participant-count"; count: number };
+  | { type: "participant-count"; count: number }
+  /** The room connection dropped without stop() being called. */
+  | { type: "lost"; message: string };
 
 export type PublisherListener = (event: PublisherEvent) => void;
 
@@ -43,6 +50,9 @@ export type Publisher = {
    *  Best-effort: swallows errors (a dropped caption never justifies tearing
    *  the room down). */
   publishCaption: (delta: string) => Promise<void>;
+  /** Publish the operator's session status as participant attributes
+   *  (see lib/session-status.ts). Best-effort, like captions. */
+  setStatus: (attributes: Record<string, string>) => Promise<void>;
   /** Disconnect from the room entirely. */
   stop: () => Promise<void>;
 };
@@ -94,6 +104,7 @@ export async function startPublisher(
   }
 
   const lkRoom = new Room({ adaptiveStream: false, dynacast: false });
+  let stopping = false;
 
   lkRoom
     .on(RoomEvent.ParticipantConnected, () => {
@@ -108,8 +119,17 @@ export async function startPublisher(
         count: lkRoom.remoteParticipants.size,
       });
     })
+    .on(RoomEvent.Reconnecting, () => {
+      emit({ type: "status", status: "reconnecting" });
+    })
+    .on(RoomEvent.Reconnected, () => {
+      emit({ type: "status", status: "live" });
+    })
     .on(RoomEvent.Disconnected, () => {
       emit({ type: "status", status: "closed" });
+      if (!stopping) {
+        emit({ type: "lost", message: "Connection to the room server was lost." });
+      }
     });
 
   const connectOptions: RoomConnectOptions = { autoSubscribe: false };
@@ -178,7 +198,21 @@ export async function startPublisher(
     }
   }
 
+  let lastStatusJson = "";
+  async function setStatus(attributes: Record<string, string>) {
+    const json = JSON.stringify(attributes);
+    if (json === lastStatusJson) return;
+    lastStatusJson = json;
+    try {
+      await lkRoom.localParticipant.setAttributes(attributes);
+    } catch (err) {
+      lastStatusJson = "";
+      console.warn("[livekit-publisher] status update failed", err);
+    }
+  }
+
   async function stop() {
+    stopping = true;
     try {
       await unpublishTrack();
       await lkRoom.disconnect();
@@ -187,5 +221,5 @@ export async function startPublisher(
     }
   }
 
-  return { publishTrack, unpublishTrack, publishCaption, stop };
+  return { publishTrack, unpublishTrack, publishCaption, setStatus, stop };
 }

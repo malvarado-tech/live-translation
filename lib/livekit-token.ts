@@ -1,7 +1,7 @@
 /**
  * Server-side LiveKit token signer.
  *
- * Never call from a client-side module — these tokens grant publish/subscribe
+ * Never call from a client-side module: these tokens grant publish/subscribe
  * permissions, and the API secret must stay on the server.
  */
 import { AccessToken } from "livekit-server-sdk";
@@ -41,6 +41,9 @@ export async function signToken(opts: TokenOptions): Promise<string> {
       canPublish: true,
       canSubscribe: false,
       canPublishData: true,
+      // Lets the operator publish its session status as participant
+      // attributes (lib/session-status.ts). Listener tokens never get it.
+      canUpdateOwnMetadata: true,
     });
   } else {
     token.addGrant({
@@ -49,6 +52,7 @@ export async function signToken(opts: TokenOptions): Promise<string> {
       canPublish: false,
       canSubscribe: true,
       canPublishData: false,
+      canUpdateOwnMetadata: false,
     });
   }
 

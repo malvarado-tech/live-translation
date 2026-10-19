@@ -6,6 +6,7 @@ import {
   languageOfRoom,
   pickLiveLanguages,
   slugify,
+  summarizeRoom,
 } from "../../lib/event-rooms.ts";
 
 const LANGS = [
@@ -76,4 +77,18 @@ test("pickLiveLanguages ignores rooms of other events", () => {
 test("pickLiveLanguages with an empty event slug returns nothing", () => {
   const rooms = new Map([["-en", [operator]]]);
   assert.deepEqual(pickLiveLanguages("", LANGS, rooms), []);
+});
+
+test("summarizeRoom counts listeners and reads the operator status", () => {
+  const status = { lt_state: "live", lt_title: "Talk" };
+  assert.deepEqual(
+    summarizeRoom([
+      { canPublish: false },
+      { canPublish: true, attributes: {} },
+      { canPublish: true, attributes: status },
+      { canPublish: false, attributes: { lt_state: "ended" } },
+    ]),
+    { listeners: 2, attributes: status },
+  );
+  assert.deepEqual(summarizeRoom([]), { listeners: 0, attributes: null });
 });

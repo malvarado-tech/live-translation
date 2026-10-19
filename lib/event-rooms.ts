@@ -83,3 +83,36 @@ export function pickLiveLanguages(
   }
   return live;
 }
+
+export type RoomParticipantDetail = RoomParticipantSummary & {
+  /** Participant attributes (the operator publishes its status there). */
+  attributes?: Readonly<Record<string, string>>;
+};
+
+export type RoomStatusSummary = {
+  /** Connected participants that cannot publish (listeners). */
+  listeners: number;
+  /** The operator's raw status attributes, or null if none publish one. */
+  attributes: Readonly<Record<string, string>> | null;
+};
+
+/**
+ * Listener count and the operator's status attributes for one room. The
+ * first publisher that carries an `lt_state` attribute wins.
+ */
+export function summarizeRoom(
+  participants: readonly RoomParticipantDetail[],
+): RoomStatusSummary {
+  let listeners = 0;
+  let attributes: Readonly<Record<string, string>> | null = null;
+  for (const p of participants) {
+    if (!p.canPublish) {
+      listeners++;
+      continue;
+    }
+    if (!attributes && p.attributes && typeof p.attributes.lt_state === "string") {
+      attributes = p.attributes;
+    }
+  }
+  return { listeners, attributes };
+}

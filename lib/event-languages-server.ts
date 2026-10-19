@@ -13,9 +13,11 @@ import { RoomServiceClient } from "livekit-server-sdk";
 import {
   eventRoomCandidates,
   pickLiveLanguages,
+  summarizeRoom,
   type LiveLanguage,
-  type RoomParticipantSummary,
+  type RoomParticipantDetail,
 } from "@/lib/event-rooms";
+import { parseOperatorStatus, type OperatorStatus } from "@/lib/session-status";
 import { TARGET_LANGUAGES } from "@/lib/languages";
 import { createRateLimiter } from "@/lib/rate-limit";
 
@@ -23,9 +25,22 @@ const CACHE_TTL_MS = 5_000;
 const CACHE_MAX_ENTRIES = 500;
 const UPSTREAM_REFRESHES_PER_MINUTE = 120;
 
+/** Public per-language status shown on the event page and operator desk. */
+export type LanguageStatus = {
+  state: OperatorStatus["state"];
+  mode: OperatorStatus["mode"];
+  listeners: number;
+  sinceMs: number | null;
+  responseMs: number | null;
+};
+
+export type EventLanguage = LiveLanguage & { status?: LanguageStatus };
+
 export type EventLanguagesResult = {
   configured: boolean;
-  languages: LiveLanguage[];
+  /** Event title published by an operator, if any. */
+  title?: string | null;
+  languages: EventLanguage[];
 };
 
 export class UpstreamBusyError extends Error {
@@ -75,7 +90,7 @@ async function lookup(
   );
   const rooms = await svc.listRooms(candidates);
   const candidateSet = new Set(candidates);
-  const participantsByRoom = new Map<string, RoomParticipantSummary[]>();
+  const participantsByRoom = new Map<string, RoomParticipantDetail[]>();
   await Promise.all(
     rooms
       .filter((r) => candidateSet.has(r.name))
@@ -85,14 +100,32 @@ async function lookup(
           r.name,
           participants.map((p) => ({
             canPublish: Boolean(p.permission?.canPublish),
+            attributes: p.attributes ?? {},
           })),
         );
       }),
   );
-  return {
-    configured: true,
-    languages: pickLiveLanguages(eventSlug, TARGET_LANGUAGES, participantsByRoom),
-  };
+  let title: string | null = null;
+  const languages: EventLanguage[] = pickLiveLanguages(
+    eventSlug,
+    TARGET_LANGUAGES,
+    participantsByRoom,
+  ).map((lang) => {
+    const summary = summarizeRoom(participantsByRoom.get(lang.room) ?? []);
+    const op = parseOperatorStatus(summary.attributes);
+    if (!title && op.title) title = op.title;
+    return {
+      ...lang,
+      status: {
+        state: op.state,
+        mode: op.mode,
+        listeners: summary.listeners,
+        sinceMs: op.sinceMs,
+        responseMs: op.responseMs,
+      },
+    };
+  });
+  return { configured: true, title, languages };
 }
 
 export async function getEventLanguages(

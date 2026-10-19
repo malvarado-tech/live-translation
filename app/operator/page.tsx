@@ -1,8 +1,26 @@
 "use client";
 
-import { QRCodeSVG } from "qrcode.react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import {
+  use,
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from "react";
+import {
+  OperatorBody,
+  SessionActions,
+  SessionBar,
+  type AlertModel,
+  type ListenerPreview,
+  type OperatorModel,
+  type StripModel,
+} from "@/components/operator/views";
 import { TelemetryPanel } from "@/components/telemetry-panel";
+import { Button, buttonClass, HMeter, Segmented, type TallyTone } from "@/components/ui/controls";
 import {
   applySinkId,
   DEFAULTS as AUDIO_DEFAULTS,
@@ -13,410 +31,291 @@ import {
   startRecorder,
   type RecorderHandle,
 } from "@/lib/audio-recorder";
-import {
-  startGeminiSession,
-  type GeminiEvent,
-  type GeminiSession,
-  type GeminiStatus,
-} from "@/lib/gemini-live";
+import { appendCaption, captionLines, emptyCaptions } from "@/lib/captions";
+import { describeOperatorError } from "@/lib/error-copy";
 import { eventRoomName, slugify } from "@/lib/event-rooms";
-import { TARGET_LANGUAGES } from "@/lib/languages";
-import { startPublisher, type Publisher } from "@/lib/livekit-publisher";
+import { languageLabel, TARGET_LANGUAGES } from "@/lib/languages";
+import { LISTENER_STRINGS, uiLangForRoom, type ListenerStatusKey } from "@/lib/listener-strings";
+import { startPublisher, type Publisher, type PublisherStatus } from "@/lib/livekit-publisher";
+import { startSession, type RealtimeEvent, type RealtimeSession } from "@/lib/realtime";
 import {
-  startSession,
-  type RealtimeEvent,
-  type RealtimeSession,
-  type RealtimeStatus,
-} from "@/lib/realtime";
+  broadcastStateOf,
+  describeSession,
+  initialSession,
+  sessionReducer,
+  type BroadcastState,
+} from "@/lib/session-machine";
+import { statusAttributes, type ChannelMode } from "@/lib/session-status";
 import {
+  formatDuration,
   SessionTelemetry,
   type ConnState,
-  type EngineId,
   type TelemetrySnapshot,
 } from "@/lib/telemetry";
-
-type EngineStatus = RealtimeStatus | GeminiStatus;
-
-const STATUS_LABEL: Record<EngineStatus, string> = {
-  idle: "Idle",
-  "creating-session": "Creating session…",
-  negotiating: "Negotiating…",
-  live: "Live",
-  closed: "Closed",
-  error: "Error",
-};
-
-const STATUS_DOT_CLASS: Record<EngineStatus, string> = {
-  idle: "bg-zinc-400",
-  "creating-session": "bg-amber-400 animate-pulse",
-  negotiating: "bg-amber-400 animate-pulse",
-  live: "bg-emerald-500 animate-pulse",
-  closed: "bg-zinc-400",
-  error: "bg-rose-500",
-};
-
-type MonitorChoice = "source" | "openai" | "gemini" | "both" | "mute";
-
-/**
- * Session phase:
- *  - idle:        nothing running; operator configures event ID, language, devices
- *  - room-open:   LiveKit room is up, QR/link live, listeners can connect and wait.
- *                 No OpenAI/Gemini sessions → no billing.
- *  - translating: translation sessions running, audio publishing to the room.
- * With LiveKit configured: idle → room-open → translating ⇄ room-open → idle.
- * Without LiveKit: idle ⇄ translating (no room concept).
- */
-type SessionPhase = "idle" | "room-open" | "translating";
+import { formatDb, primeAudio, useAudioLevel } from "@/lib/use-audio-level";
 
 const LIVEKIT_ENABLED = Boolean(process.env.NEXT_PUBLIC_LIVEKIT_URL);
+const MAX_ENGINE_RECONNECTS = 3;
+const EVENT_POLL_MS = 5_000;
+const INPUT_SILENCE_ALERT_MS = 10_000;
+const OUTPUT_SILENCE_ALERT_MS = 15_000;
 
-/** RealtimeStatus / GeminiStatus → telemetry ConnState. */
-function toConnState(s: RealtimeStatus | GeminiStatus): ConnState {
-  if (s === "creating-session" || s === "negotiating") return "connecting";
-  return s;
+type Monitor = "program" | "source" | "mute";
+
+type RemoteLanguage = {
+  code: string;
+  label: string;
+  room: string;
+  status?: {
+    state?: string | null;
+    mode?: string | null;
+    listeners?: number;
+    sinceMs?: number | null;
+    responseMs?: number | null;
+  };
+};
+
+type LogEntry = { atMs: number; text: string };
+
+function param(v: string | string[] | undefined): string {
+  return typeof v === "string" ? v : "";
 }
 
-export default function OperatorPage() {
-  const [eventId, setEventId] = useState("demo");
-  const [targetLanguage, setTargetLanguage] = useState("en");
-  // The Gemini Live engine is hidden in the UI and this state stays `false`.
-  // The engine code is kept in lib/gemini-live.ts.
-  const [useGemini] = useState(false);
+function clockOf(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+}
+
+function secs(ms: number | null | undefined): string | null {
+  return ms == null ? null : `${(ms / 1000).toFixed(1)} s`;
+}
+
+const BROADCAST_TO_DISPLAY: Record<BroadcastState, ListenerStatusKey> = {
+  waiting: "waiting",
+  live: "live",
+  paused: "paused",
+  reconnecting: "translation-reconnecting",
+  interrupted: "interrupted",
+  ended: "ended",
+};
+
+function toConnState(s: PublisherStatus | RealtimeEventStatus): ConnState {
+  if (s === "creating-session" || s === "negotiating" || s === "reconnecting") return "connecting";
+  return s;
+}
+type RealtimeEventStatus = Extract<RealtimeEvent, { type: "status" }>["status"];
+
+export default function OperatorPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
+  const sp = use(searchParams);
+
+  /* ------------------------------------------------------- configuration */
+  const [eventId, setEventId] = useState(() => param(sp.event) || "demo");
+  const [eventTitle, setEventTitle] = useState(() => param(sp.title).slice(0, 120));
+  const [targetLanguage, setTargetLanguage] = useState(() => {
+    const l = param(sp.lang);
+    return TARGET_LANGUAGES.some((t) => t.code === l) ? l : "en";
+  });
+  const [mode, setMode] = useState<ChannelMode>(() =>
+    param(sp.mode) === "original" ? "original" : "translate",
+  );
   const [captureSource, setCaptureSource] = useState(false);
-  // When true, disable browser-side echo cancellation / noise suppression /
-  // automatic gain control. Default off — those defaults are right for noisy
-  // laptop mics. Flip ON for already-clean inputs (VB-Audio Cable, line feed
-  // from a venue mixing board) where DSP introduces pumping / clipping
-  // artifacts instead of fixing anything.
+  // Disables browser echo cancellation, noise suppression and automatic
+  // gain control. Right for clean line-level feeds (mixing desk, virtual
+  // cable); wrong for laptop mics in noisy rooms.
   const [rawAudio, setRawAudio] = useState(false);
-  const [monitor, setMonitor] = useState<MonitorChoice>("openai");
+  const [monitor, setMonitor] = useState<Monitor>("program");
   const [broadcastToTab, setBroadcastToTab] = useState(true);
-  const [phase, setPhase] = useState<SessionPhase>("idle");
+  const [listenerBaseUrl, setListenerBaseUrl] = useState<string>(() =>
+    (process.env.NEXT_PUBLIC_LISTENER_BASE_URL ?? "").replace(/\/+$/, ""),
+  );
   const audioDevices = useAudioDevices();
 
-  const [openaiStatus, setOpenaiStatus] = useState<RealtimeStatus>("idle");
-  const [geminiStatus, setGeminiStatus] = useState<GeminiStatus>("idle");
-  const [publisherStatus, setPublisherStatus] = useState<
-    "idle" | "connecting" | "live" | "closed" | "error"
-  >("idle");
+  /* ------------------------------------------------------------- session */
+  const [session, dispatch] = useReducer(sessionReducer, initialSession);
+  const view = describeSession(session, LIVEKIT_ENABLED);
+  const [publisherStatus, setPublisherStatus] = useState<PublisherStatus | "idle">("idle");
   const [participantCount, setParticipantCount] = useState(0);
-
-  const [sourceTranscript, setSourceTranscript] = useState("");
-  const [openaiTranscript, setOpenaiTranscript] = useState("");
-  const [geminiTranscript, setGeminiTranscript] = useState("");
-  const [openaiLatencyMs, setOpenaiLatencyMs] = useState<number | null>(null);
-  const [geminiLatencyMs, setGeminiLatencyMs] = useState<number | null>(null);
-  const [errorMessages, setErrorMessages] = useState<string[]>([]);
-
-  const [listenerBaseUrl, setListenerBaseUrl] = useState<string>("");
-  const [copied, setCopied] = useState(false);
-  const [eventCopied, setEventCopied] = useState(false);
-  // Set while an auto-reconnect is pending or in flight. Cleared when the
-  // session goes back to `live` or `closed`. Displayed as an amber banner so
-  // operators see what's happening without it looking like a hard error.
-  const [reconnectInfo, setReconnectInfo] = useState<string | null>(null);
+  const [latencyMs, setLatencyMs] = useState<number | null>(null);
+  const [source, setSource] = useState(emptyCaptions);
+  const [target, setTarget] = useState(emptyCaptions);
+  const [micStream, setMicStream] = useState<MediaStream | null>(null);
+  const [outputStream, setOutputStream] = useState<MediaStream | null>(null);
+  const [previewStream, setPreviewStream] = useState<MediaStream | null>(null);
+  const [remote, setRemote] = useState<RemoteLanguage[]>([]);
+  const [log, setLog] = useState<LogEntry[]>([]);
+  const [now, setNow] = useState(() => Date.now());
+  const [confirmEnd, setConfirmEnd] = useState(false);
+  const [showInputPicker, setShowInputPicker] = useState(false);
+  const [copied, setCopied] = useState<"event" | "room" | null>(null);
+  const [addLang, setAddLang] = useState("");
 
   const telemetryRef = useRef<SessionTelemetry | null>(null);
-  if (telemetryRef.current === null) {
-    telemetryRef.current = new SessionTelemetry();
-  }
-  const [telemetrySnapshot, setTelemetrySnapshot] =
-    useState<TelemetrySnapshot | null>(null);
-  const [savedBenchmarkPath, setSavedBenchmarkPath] = useState<string | null>(
-    null,
-  );
+  if (telemetryRef.current === null) telemetryRef.current = new SessionTelemetry();
+  const [telemetrySnapshot, setTelemetrySnapshot] = useState<TelemetrySnapshot | null>(null);
+  const [savedBenchmarkPath, setSavedBenchmarkPath] = useState<string | null>(null);
 
-  const openaiAudioRef = useRef<HTMLAudioElement | null>(null);
-  const geminiAudioRef = useRef<HTMLAudioElement | null>(null);
-  const openaiBroadcastAudioRef = useRef<HTMLAudioElement | null>(null);
-  const geminiBroadcastAudioRef = useRef<HTMLAudioElement | null>(null);
-  // Mic monitoring — lets the operator hear the raw input audio (to verify
-  // the mic is picking up cleanly). Independent of the translation playback.
+  const programAudioRef = useRef<HTMLAudioElement | null>(null);
+  const broadcastAudioRef = useRef<HTMLAudioElement | null>(null);
   const sourceAudioRef = useRef<HTMLAudioElement | null>(null);
-  const sourceScrollRef = useRef<HTMLDivElement | null>(null);
-  const openaiScrollRef = useRef<HTMLDivElement | null>(null);
-  const geminiScrollRef = useRef<HTMLDivElement | null>(null);
 
-  const openaiSessionRef = useRef<RealtimeSession | null>(null);
-  const geminiSessionRef = useRef<GeminiSession | null>(null);
+  const engineRef = useRef<RealtimeSession | null>(null);
   const publisherRef = useRef<Publisher | null>(null);
-  const sharedMicRef = useRef<MediaStream | null>(null);
+  const micRef = useRef<MediaStream | null>(null);
+  const stoppingRef = useRef(false);
+  const lastEngineErrorRef = useRef<string>("");
+  const phaseRef = useRef(session.phase);
+  const sessionStartRef = useRef<number | null>(null);
 
-  // MediaRecorder handles — one per stream per Start→Stop cycle. Multiple
-  // cycles within a session accumulate into the per-engine Blob arrays.
   const micRecorderRef = useRef<RecorderHandle | null>(null);
-  const openaiRecorderRef = useRef<RecorderHandle | null>(null);
-  const geminiRecorderRef = useRef<RecorderHandle | null>(null);
-  const recordingsRef = useRef<{
-    mic: Blob[];
-    openai: Blob[];
-    gemini: Blob[];
-    mimeType: string;
-  }>({ mic: [], openai: [], gemini: [], mimeType: "audio/webm" });
+  const outRecorderRef = useRef<RecorderHandle | null>(null);
+  const recordingsRef = useRef<{ mic: Blob[]; openai: Blob[]; gemini: Blob[]; mimeType: string }>({
+    mic: [],
+    openai: [],
+    gemini: [],
+    mimeType: "audio/webm",
+  });
 
   useEffect(() => {
-    // Prefer the configured LAN base URL so the QR/link work on phones
-    // regardless of whether the operator opened this on localhost or the LAN IP.
-    // Fall back to however they navigated here.
-    const configured = process.env.NEXT_PUBLIC_LISTENER_BASE_URL;
-    const base = (configured || window.location.origin).replace(/\/+$/, "");
-    setListenerBaseUrl(base);
-  }, []);
+    phaseRef.current = session.phase;
+  }, [session.phase]);
 
-  // Poll the telemetry recorder once a second for the live panel.
+  const inputLevel = useAudioLevel(micStream ?? previewStream);
+  const outputLevel = useAudioLevel(outputStream);
+
+  const eventSlug = slugify(eventId || "demo");
+  const room = useMemo(() => eventRoomName(eventSlug, targetLanguage), [eventSlug, targetLanguage]);
+  const base = listenerBaseUrl || (typeof window !== "undefined" ? window.location.origin : "");
+  const eventUrl = base ? `${base}/e/${eventSlug}` : "";
+  const roomUrl = base ? `${base}/listen/${room}` : "";
+  const langLabel = languageLabel(targetLanguage);
+
+  /* --------------------------------------------------------------- clock */
   useEffect(() => {
-    const interval = setInterval(() => {
-      if (telemetryRef.current) {
-        setTelemetrySnapshot(telemetryRef.current.snapshot());
-      }
+    const id = setInterval(() => {
+      setNow(Date.now());
+      if (telemetryRef.current) setTelemetrySnapshot(telemetryRef.current.snapshot());
     }, 1000);
-    return () => clearInterval(interval);
+    return () => clearInterval(id);
   }, []);
 
-  useEffect(() => {
-    if (sourceScrollRef.current) {
-      sourceScrollRef.current.scrollTop =
-        sourceScrollRef.current.scrollHeight;
-    }
-  }, [sourceTranscript]);
-  useEffect(() => {
-    if (openaiScrollRef.current) {
-      openaiScrollRef.current.scrollTop =
-        openaiScrollRef.current.scrollHeight;
-    }
-  }, [openaiTranscript]);
-  useEffect(() => {
-    if (geminiScrollRef.current) {
-      geminiScrollRef.current.scrollTop =
-        geminiScrollRef.current.scrollHeight;
-    }
-  }, [geminiTranscript]);
+  const addLog = useCallback((text: string) => {
+    const start = sessionStartRef.current ?? Date.now();
+    setLog((prev) => [...prev.slice(-49), { atMs: Date.now() - start, text }]);
+  }, []);
 
-  // Apply monitor selection to audio sinks.
-  // Primary sinks play at the selected output device (or system default).
-  // Broadcast sinks always play at system default; they exist to feed tab audio
-  // when the primary sink is routed to a non-default device. Muted when the
-  // broadcastToTab toggle is off OR when the user is already on the default
-  // device (the primary already provides tab audio in that case).
+  /* ------------------------------------------------------------- monitor */
   useEffect(() => {
-    const shouldHearSource = monitor === "source";
-    const shouldHearOpenai = monitor === "openai" || monitor === "both";
-    const shouldHearGemini = monitor === "gemini" || monitor === "both";
     const usingSpecificOutput = Boolean(audioDevices.selectedOutput);
-
+    const program = monitor === "program";
+    const original = mode === "original";
     if (sourceAudioRef.current) {
-      sourceAudioRef.current.muted = !shouldHearSource;
+      sourceAudioRef.current.muted = !(monitor === "source" || (program && original));
     }
-    if (openaiAudioRef.current) {
-      openaiAudioRef.current.muted = !shouldHearOpenai;
+    if (programAudioRef.current) programAudioRef.current.muted = !(program && !original);
+    if (broadcastAudioRef.current) {
+      broadcastAudioRef.current.muted = !broadcastToTab || !program || original || !usingSpecificOutput;
     }
-    if (geminiAudioRef.current) {
-      geminiAudioRef.current.muted = !shouldHearGemini;
-    }
-    if (openaiBroadcastAudioRef.current) {
-      openaiBroadcastAudioRef.current.muted =
-        !broadcastToTab || !shouldHearOpenai || !usingSpecificOutput;
-    }
-    if (geminiBroadcastAudioRef.current) {
-      geminiBroadcastAudioRef.current.muted =
-        !broadcastToTab || !shouldHearGemini || !usingSpecificOutput;
-    }
-  }, [monitor, broadcastToTab, audioDevices.selectedOutput]);
+  }, [monitor, mode, broadcastToTab, audioDevices.selectedOutput]);
 
-  // Route audio output to the selected device (Chrome/Edge/Firefox only).
-  // Only the PRIMARY sinks get setSinkId; broadcast sinks always use the default.
   useEffect(() => {
     if (!audioDevices.outputSupported) return;
     void applySinkId(sourceAudioRef.current, audioDevices.selectedOutput);
-    void applySinkId(openaiAudioRef.current, audioDevices.selectedOutput);
-    void applySinkId(geminiAudioRef.current, audioDevices.selectedOutput);
+    void applySinkId(programAudioRef.current, audioDevices.selectedOutput);
   }, [audioDevices.selectedOutput, audioDevices.outputSupported]);
 
-  const room = useMemo(() => {
-    const slug = slugify(eventId || "demo");
-    return eventRoomName(slug, targetLanguage);
-  }, [eventId, targetLanguage]);
+  /* --------------------------------------------------- status to listeners */
+  const broadcast = broadcastStateOf(session);
+  useEffect(() => {
+    const pub = publisherRef.current;
+    if (!pub || !broadcast) return;
+    void pub.setStatus(
+      statusAttributes({
+        state: broadcast,
+        title: eventTitle.trim() || null,
+        lang: targetLanguage,
+        mode,
+        sinceMs: session.liveSince,
+        responseMs: mode === "translate" ? latencyMs : null,
+      }),
+    );
+  }, [broadcast, eventTitle, targetLanguage, mode, session.liveSince, latencyMs]);
 
-  const listenerUrl = useMemo(() => {
-    const base = listenerBaseUrl.replace(/\/+$/, "");
-    if (!base) return "";
-    return `${base}/listen/${room}`;
-  }, [listenerBaseUrl, room]);
+  /* ------------------------------------------- other languages of the event */
+  useEffect(() => {
+    if (!LIVEKIT_ENABLED || !session.hasRoom) return;
+    let stopped = false;
+    const load = async () => {
+      try {
+        const resp = await fetch(`/api/event-languages?event=${encodeURIComponent(eventSlug)}`, {
+          cache: "no-store",
+        });
+        if (!resp.ok) return;
+        const data = (await resp.json()) as { languages?: RemoteLanguage[] };
+        if (!stopped && Array.isArray(data.languages)) setRemote(data.languages);
+      } catch {
+        // keep the last list
+      }
+    };
+    const first = setTimeout(() => void load(), 0);
+    const id = setInterval(() => void load(), EVENT_POLL_MS);
+    return () => {
+      stopped = true;
+      clearTimeout(first);
+      clearInterval(id);
+    };
+  }, [session.hasRoom, eventSlug]);
 
-  // One link per event: listeners pick among the languages that are live.
-  const eventUrl = useMemo(() => {
-    const base = listenerBaseUrl.replace(/\/+$/, "");
-    if (!base) return "";
-    return `${base}/e/${slugify(eventId || "demo")}`;
-  }, [listenerBaseUrl, eventId]);
-
-  const targetLanguageLabel = useMemo(
-    () =>
-      TARGET_LANGUAGES.find((l) => l.code === targetLanguage)?.label ??
+  /* ---------------------------------------------------------- telemetry */
+  const startTelemetryIfNeeded = useCallback(() => {
+    const tel = telemetryRef.current;
+    if (!tel || tel.snapshot().running) return;
+    tel.start({
+      eventId: eventSlug,
       targetLanguage,
-    [targetLanguage],
-  );
+      engines: ["openai"],
+      captureSource: captureSource && mode === "translate",
+    });
+    recordingsRef.current = { mic: [], openai: [], gemini: [], mimeType: "audio/webm" };
+    sessionStartRef.current = Date.now();
+    setLog([]);
+    setSavedBenchmarkPath(null);
+    setTelemetrySnapshot(tel.snapshot());
+  }, [eventSlug, targetLanguage, captureSource, mode]);
 
-  const pushError = useCallback((scope: string, message: string) => {
-    setErrorMessages((prev) => [...prev, `${scope}: ${message}`]);
-  }, []);
-
-  const handleOpenaiEvent = useCallback((event: RealtimeEvent) => {
-    const tel = telemetryRef.current;
-    switch (event.type) {
-      case "status":
-        setOpenaiStatus(event.status);
-        tel?.recordConnState("openai", toConnState(event.status));
-        // Clear the auto-reconnect banner once we're definitively back to a
-        // steady state (or fully closed).
-        if (event.status === "live" || event.status === "closed") {
-          setReconnectInfo(null);
-        }
-        break;
-      case "source-transcript":
-        setSourceTranscript((prev) => prev + event.delta);
-        tel?.recordTranscript("openai", "source", event.delta);
-        break;
-      case "translated-transcript":
-        setOpenaiTranscript((prev) => prev + event.delta);
-        tel?.recordActivity("openai");
-        tel?.recordTranscript("openai", "translated", event.delta);
-        // Fan the caption out to listeners over the LiveKit data channel.
-        // No-op in no-LiveKit mode (publisherRef is null).
-        if (publisherRef.current) {
-          void publisherRef.current.publishCaption(event.delta);
-        }
-        break;
-      case "first-audio-received":
-        setOpenaiLatencyMs(event.latencyMs);
-        tel?.recordLatency("openai", event.latencyMs);
-        break;
-      case "token-expiry":
-        tel?.recordTokenExpiry("openai", event.expiresAtMs);
-        break;
-      case "reconnect":
-        setReconnectInfo(
-          `Auto-reconnecting OpenAI (attempt ${event.attempt}/3, in ${Math.round(event.delayMs / 1000)}s)…`,
-        );
-        tel?.recordReconnect("openai", event.attempt, event.delayMs);
-        break;
-      case "error":
-        pushError("OpenAI", event.message);
-        tel?.recordError("OpenAI", event.message);
-        break;
-    }
-  }, [pushError]);
-
-  const handleGeminiEvent = useCallback((event: GeminiEvent) => {
-    const tel = telemetryRef.current;
-    switch (event.type) {
-      case "status":
-        setGeminiStatus(event.status);
-        tel?.recordConnState("gemini", toConnState(event.status));
-        break;
-      case "source-transcript":
-        // Gemini also emits source transcript; show it only if OpenAI didn't.
-        setSourceTranscript((prev) => prev || event.delta);
-        tel?.recordTranscript("gemini", "source", event.delta);
-        break;
-      case "translated-transcript":
-        setGeminiTranscript((prev) => prev + event.delta);
-        tel?.recordActivity("gemini");
-        tel?.recordTranscript("gemini", "translated", event.delta);
-        break;
-      case "first-audio-received":
-        setGeminiLatencyMs(event.latencyMs);
-        tel?.recordLatency("gemini", event.latencyMs);
-        break;
-      case "token-expiry":
-        tel?.recordTokenExpiry("gemini", event.expiresAtMs);
-        break;
-      case "error":
-        pushError("Gemini", event.message);
-        tel?.recordError("Gemini", event.message);
-        break;
-    }
-  }, [pushError]);
-
-  const handleMark = useCallback(() => {
-    telemetryRef.current?.recordMark();
-    // Force a snapshot refresh so the panel shows the new count immediately.
-    setTelemetrySnapshot(telemetryRef.current?.snapshot() ?? null);
-  }, []);
-
-  /** Stop any active per-stream recorders and stash their Blobs. */
   const stopSegmentRecorders = useCallback(async () => {
     const recs = recordingsRef.current;
     const stops: Promise<void>[] = [];
     const mic = micRecorderRef.current;
-    const openai = openaiRecorderRef.current;
-    const gemini = geminiRecorderRef.current;
+    const out = outRecorderRef.current;
     micRecorderRef.current = null;
-    openaiRecorderRef.current = null;
-    geminiRecorderRef.current = null;
+    outRecorderRef.current = null;
     if (mic) {
       recs.mimeType = mic.mimeType;
-      stops.push(
-        mic.stop().then((blob) => {
-          if (blob) recs.mic.push(blob);
-        }),
-      );
+      stops.push(mic.stop().then((b) => void (b && recs.mic.push(b))));
     }
-    if (openai) {
-      recs.mimeType = openai.mimeType;
-      stops.push(
-        openai.stop().then((blob) => {
-          if (blob) recs.openai.push(blob);
-        }),
-      );
-    }
-    if (gemini) {
-      recs.mimeType = gemini.mimeType;
-      stops.push(
-        gemini.stop().then((blob) => {
-          if (blob) recs.gemini.push(blob);
-        }),
-      );
+    if (out) {
+      recs.mimeType = out.mimeType;
+      stops.push(out.stop().then((b) => void (b && recs.openai.push(b))));
     }
     await Promise.allSettled(stops);
   }, []);
 
-  // Start the telemetry recorder if it isn't already running. Called from
-  // handleOpenRoom (LiveKit flow) or handleStartTranslation (no-LiveKit flow) —
-  // whichever begins the session.
-  const startTelemetryIfNeeded = useCallback(() => {
-    const tel = telemetryRef.current;
-    if (!tel || tel.snapshot().running) return;
-    const engines: EngineId[] = useGemini ? ["openai", "gemini"] : ["openai"];
-    tel.start({
-      eventId: slugify(eventId || "demo"),
-      targetLanguage,
-      engines,
-      captureSource,
-    });
-    // Fresh session = fresh per-engine recording buffers.
-    recordingsRef.current = {
-      mic: [],
-      openai: [],
-      gemini: [],
-      mimeType: "audio/webm",
-    };
-    setSavedBenchmarkPath(null);
-    setTelemetrySnapshot(tel.snapshot());
-  }, [useGemini, eventId, targetLanguage, captureSource]);
-
-  // Finalize telemetry and write the benchmark to benchmarks/{stamp}/.
-  // If audio recordings were captured this session, upload as multipart so the
-  // server writes audio + SRT/VTT alongside the JSON/Markdown report.
+  // Finalize telemetry and write the report to benchmarks/{stamp}/, with
+  // audio and SRT/VTT when recordings exist.
   const finalizeTelemetry = useCallback(async () => {
     const tel = telemetryRef.current;
-    if (!tel) return;
+    if (!tel || !tel.snapshot().running) return;
     tel.stop();
     setTelemetrySnapshot(tel.snapshot());
     const report = tel.report();
     const recs = recordingsRef.current;
-    const hasAudio =
-      recs.mic.length > 0 || recs.openai.length > 0 || recs.gemini.length > 0;
+    const hasAudio = recs.mic.length > 0 || recs.openai.length > 0;
     try {
       let resp: Response;
       if (hasAudio) {
@@ -424,27 +323,11 @@ export default function OperatorPage() {
         form.append("report", JSON.stringify(report));
         const ext = mimeToExtension(recs.mimeType);
         form.append("extension", ext);
-        recs.mic.forEach((b, i) =>
-          form.append(`audio-mic-${i + 1}`, b, `audio-mic-${i + 1}.${ext}`),
-        );
+        recs.mic.forEach((b, i) => form.append(`audio-mic-${i + 1}`, b, `audio-mic-${i + 1}.${ext}`));
         recs.openai.forEach((b, i) =>
-          form.append(
-            `audio-openai-${i + 1}`,
-            b,
-            `audio-openai-${i + 1}.${ext}`,
-          ),
+          form.append(`audio-openai-${i + 1}`, b, `audio-openai-${i + 1}.${ext}`),
         );
-        recs.gemini.forEach((b, i) =>
-          form.append(
-            `audio-gemini-${i + 1}`,
-            b,
-            `audio-gemini-${i + 1}.${ext}`,
-          ),
-        );
-        resp = await fetch("/api/save-benchmark", {
-          method: "POST",
-          body: form,
-        });
+        resp = await fetch("/api/save-benchmark", { method: "POST", body: form });
       } else {
         resp = await fetch("/api/save-benchmark", {
           method: "POST",
@@ -452,29 +335,42 @@ export default function OperatorPage() {
           body: JSON.stringify(report),
         });
       }
-      const data = (await resp.json()) as {
-        markdown?: string;
-        folder?: string;
-        error?: string;
-      };
-      if (resp.ok) {
-        setSavedBenchmarkPath(data.folder ?? data.markdown ?? "(saved)");
-      } else if (data.error) {
-        pushError("Benchmark", data.error);
-      }
-    } catch (err) {
-      pushError(
-        "Benchmark",
-        err instanceof Error ? err.message : String(err),
-      );
+      const data = (await resp.json().catch(() => ({}))) as { markdown?: string; folder?: string };
+      if (resp.ok) setSavedBenchmarkPath(data.folder ?? data.markdown ?? "(saved)");
+    } catch {
+      // The report is a convenience; failing to write it is not a session fault.
     }
-  }, [pushError]);
+  }, []);
 
-  // Phase 1 — connect to the LiveKit room (creates it, holds it open). The
-  // QR/link become live; listeners can connect and wait. No translation yet.
+  /* ------------------------------------------------------------ teardown */
+  const teardownTranslation = useCallback(async () => {
+    stoppingRef.current = true;
+    try {
+      await engineRef.current?.stop();
+    } catch {
+      // ignore
+    }
+    engineRef.current = null;
+    await stopSegmentRecorders();
+    try {
+      await publisherRef.current?.unpublishTrack();
+    } catch {
+      // ignore
+    }
+    micRef.current?.getTracks().forEach((t) => t.stop());
+    micRef.current = null;
+    setMicStream(null);
+    setOutputStream(null);
+    if (sourceAudioRef.current) sourceAudioRef.current.srcObject = null;
+    stoppingRef.current = false;
+  }, [stopSegmentRecorders]);
+
+  /* ------------------------------------------------------------ room */
   const handleOpenRoom = useCallback(async () => {
-    setErrorMessages([]);
+    primeAudio();
+    dispatch({ type: "open-room" });
     setParticipantCount(0);
+    setRemote([]);
     startTelemetryIfNeeded();
     try {
       publisherRef.current = await startPublisher({
@@ -483,764 +379,1070 @@ export default function OperatorPage() {
           const tel = telemetryRef.current;
           if (e.type === "status") {
             setPublisherStatus(e.status);
-            tel?.recordConnState("livekit", e.status);
+            tel?.recordConnState("livekit", toConnState(e.status));
           } else if (e.type === "participant-count") {
             setParticipantCount(e.count);
             tel?.recordListenerCount(e.count);
           } else if (e.type === "error") {
-            pushError("LiveKit", e.message);
             tel?.recordError("LiveKit", e.message);
+          } else if (e.type === "lost") {
+            tel?.recordError("LiveKit", e.message);
+            publisherRef.current = null;
+            dispatch({ type: "room-lost", message: e.message });
+            void teardownTranslation();
           }
         },
       });
-      setPhase("room-open");
+      dispatch({ type: "room-opened" });
+      addLog("Room opened");
     } catch (err) {
       publisherRef.current = null;
-      pushError(
-        "LiveKit",
-        err instanceof Error ? err.message : String(err),
-      );
+      dispatch({ type: "room-failed", message: err instanceof Error ? err.message : String(err) });
+      addLog("Room failed to open");
     }
-  }, [room, startTelemetryIfNeeded, pushError]);
+  }, [room, startTelemetryIfNeeded, teardownTranslation, addLog]);
 
-  // Phase 2 — open the translation sessions and publish audio into the room.
-  // Works both from room-open (LiveKit flow) and straight from idle (no-LiveKit).
-  const handleStartTranslation = useCallback(async () => {
-    setSourceTranscript("");
-    setOpenaiTranscript("");
-    setGeminiTranscript("");
-    setOpenaiLatencyMs(null);
-    setGeminiLatencyMs(null);
-    setErrorMessages([]);
-    startTelemetryIfNeeded(); // no-op if handleOpenRoom already started it
+  const handleEngineEvent = useCallback(
+    (event: RealtimeEvent) => {
+      const tel = telemetryRef.current;
+      const at = sessionStartRef.current ? Date.now() - sessionStartRef.current : null;
+      switch (event.type) {
+        case "status":
+          tel?.recordConnState("openai", toConnState(event.status));
+          if (event.status === "live") {
+            dispatch({ type: "engine-live", at: Date.now() });
+          } else if (event.status === "closed" && !stoppingRef.current) {
+            const p = phaseRef.current;
+            if (p === "live" || p === "reconnecting") {
+              dispatch({ type: "engine-lost", message: lastEngineErrorRef.current || "Translation engine closed." });
+            }
+          }
+          break;
+        case "source-transcript":
+          setSource((prev) => appendCaption(prev, event.delta, at));
+          tel?.recordTranscript("openai", "source", event.delta);
+          break;
+        case "translated-transcript":
+          setTarget((prev) => appendCaption(prev, event.delta, at));
+          tel?.recordActivity("openai");
+          tel?.recordTranscript("openai", "translated", event.delta);
+          if (publisherRef.current) void publisherRef.current.publishCaption(event.delta);
+          break;
+        case "first-audio-received":
+          setLatencyMs(event.latencyMs);
+          tel?.recordLatency("openai", event.latencyMs);
+          break;
+        case "token-expiry":
+          tel?.recordTokenExpiry("openai", event.expiresAtMs);
+          break;
+        case "reconnect":
+          dispatch({ type: "engine-reconnecting", attempt: event.attempt, max: MAX_ENGINE_RECONNECTS });
+          tel?.recordReconnect("openai", event.attempt, event.delayMs);
+          break;
+        case "error":
+          lastEngineErrorRef.current = event.message;
+          tel?.recordError("OpenAI", event.message);
+          break;
+      }
+    },
+    [],
+  );
 
-    let micStream: MediaStream | null = null;
+  const handleStart = useCallback(async () => {
+    primeAudio();
+    dispatch({ type: "start" });
+    setSource(emptyCaptions);
+    setTarget(emptyCaptions);
+    setLatencyMs(null);
+    lastEngineErrorRef.current = "";
+    startTelemetryIfNeeded();
+    previewStream?.getTracks().forEach((t) => t.stop());
+    setPreviewStream(null);
+
+    let mic: MediaStream;
     try {
-      const audioConstraints: MediaTrackConstraints = {
+      const constraints: MediaTrackConstraints = {
         echoCancellation: !rawAudio,
         noiseSuppression: !rawAudio,
         autoGainControl: !rawAudio,
       };
-      if (audioDevices.selectedInput) {
-        audioConstraints.deviceId = { exact: audioDevices.selectedInput };
-      }
-      micStream = await navigator.mediaDevices.getUserMedia({
-        audio: audioConstraints,
-        video: false,
-      });
-      sharedMicRef.current = micStream;
-      // Pipe the mic into the source-monitor audio element so the operator
-      // can choose to listen to the raw input via the Monitor radio.
-      if (sourceAudioRef.current) {
-        sourceAudioRef.current.srcObject = micStream;
-        sourceAudioRef.current.play().catch(() => {
-          // Autoplay may need a user gesture — silently ignore; muted is the
-          // default state until the operator picks Monitor=Source anyway.
-        });
-      }
-      if (!audioDevices.hasPermission) {
-        void audioDevices.refresh();
-      }
+      if (audioDevices.selectedInput) constraints.deviceId = { exact: audioDevices.selectedInput };
+      mic = await navigator.mediaDevices.getUserMedia({ audio: constraints, video: false });
     } catch (err) {
-      pushError(
-        "Mic",
-        `Could not access microphone: ${(err as Error).message}`,
-      );
+      const e = err as Error;
+      dispatch({ type: "start-failed", scope: "Input", message: `${e.name ?? "Error"}: ${e.message}` });
+      addLog("Input not available");
+      return;
+    }
+    micRef.current = mic;
+    setMicStream(mic);
+    if (sourceAudioRef.current) {
+      sourceAudioRef.current.srcObject = mic;
+      sourceAudioRef.current.play().catch(() => {});
+    }
+    if (!audioDevices.hasPermission) void audioDevices.refresh();
+    micRecorderRef.current = startRecorder({ stream: mic });
+
+    if (mode === "original") {
+      // The speaker's own audio goes straight to the room; no engine, no cost.
+      setOutputStream(mic);
+      try {
+        if (publisherRef.current) await publisherRef.current.publishTrack(mic.getAudioTracks()[0]);
+        dispatch({ type: "engine-live", at: Date.now() });
+        addLog(`${targetLanguage.toUpperCase()} original audio on air`);
+      } catch (err) {
+        dispatch({ type: "start-failed", scope: "Room", message: err instanceof Error ? err.message : String(err) });
+        await teardownTranslation();
+      }
       return;
     }
 
-    setPhase("translating");
-
-    // Start recording the source mic for this segment. (Recorders for the
-    // translated audio start inside each engine's stream-ready callback.)
-    micRecorderRef.current = startRecorder({ stream: micStream });
-
     try {
-      openaiSessionRef.current = await startSession({
+      engineRef.current = await startSession({
         targetLanguage,
         captureSource,
-        audioSink: openaiAudioRef.current,
-        broadcastSink: openaiBroadcastAudioRef.current,
-        micStream,
-        onEvent: handleOpenaiEvent,
+        audioSink: programAudioRef.current,
+        broadcastSink: broadcastAudioRef.current,
+        micStream: mic,
+        onEvent: handleEngineEvent,
         onTrack: async (track) => {
-          // If an auto-reconnect produced a fresh translated track while a
-          // recorder is still running on the old one, flush the old recorder
-          // into the Blob array before starting a new one. Otherwise the old
-          // recording is silently dropped on GC.
-          const prev = openaiRecorderRef.current;
-          openaiRecorderRef.current = null;
-          if (prev) {
-            void prev.stop().then((blob) => {
-              if (blob) recordingsRef.current.openai.push(blob);
-            });
-          }
-          openaiRecorderRef.current = startRecorder({
-            stream: new MediaStream([track]),
-          });
-          // Publish into the already-connected room. In no-LiveKit mode
-          // publisherRef is null and the translated audio just plays locally.
+          const prev = outRecorderRef.current;
+          outRecorderRef.current = null;
+          if (prev) void prev.stop().then((b) => void (b && recordingsRef.current.openai.push(b)));
+          const stream = new MediaStream([track]);
+          outRecorderRef.current = startRecorder({ stream });
+          setOutputStream(stream);
           if (!publisherRef.current) return;
           try {
             await publisherRef.current.publishTrack(track);
           } catch (err) {
-            pushError(
-              "LiveKit publisher",
-              err instanceof Error ? err.message : String(err),
-            );
+            telemetryRef.current?.recordError("LiveKit", err instanceof Error ? err.message : String(err));
           }
         },
       });
-    } catch {
-      openaiSessionRef.current = null;
-    }
-
-    if (useGemini) {
-      try {
-        geminiSessionRef.current = await startGeminiSession({
-          targetLanguage,
-          targetLanguageLabel,
-          captureSource,
-          audioSink: geminiAudioRef.current,
-          broadcastSink: geminiBroadcastAudioRef.current,
-          micStream,
-          onEvent: handleGeminiEvent,
-          onOutputStream: (stream) => {
-            geminiRecorderRef.current = startRecorder({ stream });
-          },
-        });
-      } catch {
-        geminiSessionRef.current = null;
-      }
+      addLog(`${targetLanguage.toUpperCase()} on air`);
+    } catch (err) {
+      engineRef.current = null;
+      dispatch({
+        type: "start-failed",
+        scope: "Translation",
+        message: lastEngineErrorRef.current || (err instanceof Error ? err.message : String(err)),
+      });
+      addLog("Translation failed to start");
+      await teardownTranslation();
     }
   }, [
     targetLanguage,
-    targetLanguageLabel,
-    useGemini,
     captureSource,
     rawAudio,
-    handleOpenaiEvent,
-    handleGeminiEvent,
-    startTelemetryIfNeeded,
-    pushError,
+    mode,
     audioDevices,
+    previewStream,
+    handleEngineEvent,
+    startTelemetryIfNeeded,
+    teardownTranslation,
+    addLog,
   ]);
 
-  // Stop translation but keep the room open (listeners stay connected, see
-  // "waiting for the speaker"). With no LiveKit there's no room — this ends
-  // the session and writes the benchmark.
-  const handleStopTranslation = useCallback(async () => {
-    try {
-      await openaiSessionRef.current?.stop();
-    } catch {
-      // ignore
-    }
-    try {
-      await geminiSessionRef.current?.stop();
-    } catch {
-      // ignore
-    }
-    openaiSessionRef.current = null;
-    geminiSessionRef.current = null;
-    // Flush this segment's recorders into the per-engine Blob arrays. Must
-    // happen AFTER session.stop() so the last audio chunk lands cleanly.
-    await stopSegmentRecorders();
-    try {
-      await publisherRef.current?.unpublishTrack();
-    } catch {
-      // ignore
-    }
-    sharedMicRef.current?.getTracks().forEach((t) => t.stop());
-    sharedMicRef.current = null;
+  const handleStop = useCallback(async () => {
+    dispatch({ type: "stop" });
+    await teardownTranslation();
+    if (!publisherRef.current) await finalizeTelemetry();
+    dispatch({ type: "stopped" });
+    addLog(publisherRef.current ? "Paused" : "Stopped");
+  }, [teardownTranslation, finalizeTelemetry, addLog]);
 
-    if (LIVEKIT_ENABLED && publisherRef.current) {
-      setPhase("room-open");
-    } else {
-      await finalizeTelemetry();
-      setPhase("idle");
-    }
-  }, [finalizeTelemetry, stopSegmentRecorders]);
-
-  // Tear everything down: stop translation if running, disconnect the room,
-  // finalize telemetry + write the benchmark.
-  const handleCloseRoom = useCallback(async () => {
-    try {
-      await openaiSessionRef.current?.stop();
-    } catch {
-      // ignore
-    }
-    try {
-      await geminiSessionRef.current?.stop();
-    } catch {
-      // ignore
-    }
-    openaiSessionRef.current = null;
-    geminiSessionRef.current = null;
-    await stopSegmentRecorders();
-    sharedMicRef.current?.getTracks().forEach((t) => t.stop());
-    sharedMicRef.current = null;
-    try {
-      await publisherRef.current?.stop();
-    } catch {
-      // ignore
-    }
+  const handleClose = useCallback(async () => {
+    setConfirmEnd(false);
+    dispatch({ type: "close" });
+    await teardownTranslation();
+    const pub = publisherRef.current;
     publisherRef.current = null;
+    if (pub) {
+      try {
+        await pub.setStatus(
+          statusAttributes({ state: "ended", title: eventTitle.trim() || null, lang: targetLanguage, mode }),
+        );
+      } catch {
+        // ignore
+      }
+      try {
+        await pub.stop();
+      } catch {
+        // ignore
+      }
+    }
     setPublisherStatus("closed");
+    setParticipantCount(0);
+    setRemote([]);
     await finalizeTelemetry();
-    setPhase("idle");
-  }, [finalizeTelemetry, stopSegmentRecorders]);
+    dispatch({ type: "closed" });
+  }, [teardownTranslation, finalizeTelemetry, eventTitle, targetLanguage, mode]);
+
+  const handleMark = useCallback(() => {
+    telemetryRef.current?.recordMark();
+    const snap = telemetryRef.current?.snapshot() ?? null;
+    setTelemetrySnapshot(snap);
+    const last = captionLines(source).at(-1)?.text ?? captionLines(target).at(-1)?.text;
+    addLog(`Mark ${snap?.marksCount ?? ""}${last ? ` · “${last.slice(0, 40)}”` : ""}`);
+  }, [source, target, addLog]);
 
   useEffect(() => {
     return () => {
       void publisherRef.current?.stop();
-      void openaiSessionRef.current?.stop();
-      void geminiSessionRef.current?.stop();
+      void engineRef.current?.stop();
       void micRecorderRef.current?.stop();
-      void openaiRecorderRef.current?.stop();
-      void geminiRecorderRef.current?.stop();
-      sharedMicRef.current?.getTracks().forEach((t) => t.stop());
+      void outRecorderRef.current?.stop();
+      micRef.current?.getTracks().forEach((t) => t.stop());
     };
   }, []);
 
-  const handleCopyUrl = useCallback(async () => {
-    if (!listenerUrl) return;
+  const toggleTest = useCallback(async () => {
+    if (previewStream) {
+      previewStream.getTracks().forEach((t) => t.stop());
+      setPreviewStream(null);
+      return;
+    }
+    primeAudio();
     try {
-      await navigator.clipboard.writeText(listenerUrl);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      const constraints: MediaTrackConstraints = {
+        echoCancellation: !rawAudio,
+        noiseSuppression: !rawAudio,
+        autoGainControl: !rawAudio,
+      };
+      if (audioDevices.selectedInput) constraints.deviceId = { exact: audioDevices.selectedInput };
+      const s = await navigator.mediaDevices.getUserMedia({ audio: constraints, video: false });
+      setPreviewStream(s);
+      if (!audioDevices.hasPermission) void audioDevices.refresh();
+    } catch (err) {
+      const e = err as Error;
+      dispatch({ type: "start" });
+      dispatch({ type: "start-failed", scope: "Input", message: `${e.name ?? "Error"}: ${e.message}` });
+    }
+  }, [previewStream, rawAudio, audioDevices]);
+
+  // Release the test stream when leaving the page.
+  useEffect(() => () => previewStream?.getTracks().forEach((t) => t.stop()), [previewStream]);
+
+  /* ------------------------------------------------------- primary action */
+  type PrimaryAction = {
+    label: string;
+    onClick: () => void;
+    disabled?: boolean;
+    tone?: "primary" | "default";
+  } | null;
+  const primary = useMemo((): PrimaryAction => {
+    if (view.busy) return { label: view.label, onClick: () => {}, disabled: true };
+    if (view.canStop) {
+      return { label: session.hasRoom ? "Pause" : "Stop", onClick: () => void handleStop(), tone: "default" as const };
+    }
+    if (view.canStart) {
+      return {
+        label: mode === "original" ? "Start original audio" : "Start translation",
+        onClick: () => void handleStart(),
+      };
+    }
+    if (view.canOpenRoom) return { label: "Open room", onClick: () => void handleOpenRoom() };
+    return null;
+  }, [view, session.hasRoom, mode, handleStop, handleStart, handleOpenRoom]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el && el.closest("input, textarea, select, button, a, [role=radio], [contenteditable=true]")) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.code === "Space") {
+        if (primary && !primary.disabled) {
+          e.preventDefault();
+          primary.onClick();
+        }
+      } else if (e.key === "m" || e.key === "M") {
+        if (telemetryRef.current?.snapshot().running) handleMark();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [primary, handleMark]);
+
+  const copy = useCallback(async (which: "event" | "room") => {
+    const url = which === "event" ? eventUrl : roomUrl;
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(which);
+      setTimeout(() => setCopied(null), 2000);
     } catch {
       // ignore
     }
-  }, [listenerUrl]);
+  }, [eventUrl, roomUrl]);
 
-  const handleCopyEventUrl = useCallback(async () => {
-    if (!eventUrl) return;
-    try {
-      await navigator.clipboard.writeText(eventUrl);
-      setEventCopied(true);
-      setTimeout(() => setEventCopied(false), 2000);
-    } catch {
-      // ignore
+  /* -------------------------------------------------------------- model */
+  const live = session.phase === "live";
+  const onAirMs = session.liveSince ? now - session.liveSince : 0;
+  const uptimeMs = telemetrySnapshot?.running ? telemetrySnapshot.uptimeMs : 0;
+  const remoteOthers = remote.filter((r) => r.code !== targetLanguage);
+  const remoteListeners = remoteOthers.reduce((n, r) => n + (r.status?.listeners ?? 0), 0);
+  const listenersTotal = participantCount + remoteListeners;
+  const inputLabel =
+    audioDevices.inputs.find((d) => d.deviceId === audioDevices.selectedInput)?.label ??
+    AUDIO_DEFAULTS.inputLabel;
+  const inputActive = inputLevel.active;
+
+  const alert: AlertModel | null = (() => {
+    if (session.error) {
+      const c = describeOperatorError(session.error.scope, session.error.message);
+      return {
+        severity: "fault",
+        title: c.title,
+        body: c.fix,
+        detail: c.detail,
+        actions: (
+          <>
+            {view.canStart ? (
+              <Button tone="primary" onClick={() => void handleStart()} testId="alert-retry">
+                Retry
+              </Button>
+            ) : view.canOpenRoom ? (
+              <Button tone="primary" onClick={() => void handleOpenRoom()} testId="alert-retry">
+                Retry
+              </Button>
+            ) : null}
+            <Button tone="ghost" onClick={() => dispatch({ type: "dismiss" })} testId="alert-dismiss">
+              Dismiss
+            </Button>
+          </>
+        ),
+      };
     }
-  }, [eventUrl]);
+    if (publisherStatus === "reconnecting" && session.hasRoom) {
+      return {
+        severity: "warn",
+        title: "Room connection reconnecting",
+        body: "Listeners hear silence until the connection returns. It retries on its own.",
+      };
+    }
+    if (session.phase === "reconnecting" && session.reconnect) {
+      return {
+        severity: "warn",
+        title: `${langLabel} is reconnecting, attempt ${session.reconnect.attempt} of ${session.reconnect.max}`,
+        body: `${participantCount} ${participantCount === 1 ? "listener hears" : "listeners hear"} silence. It retries on its own; Pause and Start restart it by hand.`,
+      };
+    }
+    if (live && inputActive && inputLevel.silentMs > INPUT_SILENCE_ALERT_MS) {
+      return {
+        severity: "warn",
+        title: `No input signal for ${Math.round(inputLevel.silentMs / 1000)} s`,
+        body: "Check the speaker's microphone and cable, or change the input.",
+        actions: (
+          <Button tone="warn" onClick={() => setShowInputPicker(true)}>
+            Change input
+          </Button>
+        ),
+      };
+    }
+    if (
+      live &&
+      mode === "translate" &&
+      outputLevel.active &&
+      outputLevel.silentMs > OUTPUT_SILENCE_ALERT_MS &&
+      inputLevel.silentMs < 2000
+    ) {
+      return {
+        severity: "warn",
+        title: `No translated audio for ${Math.round(outputLevel.silentMs / 1000)} s`,
+        body: "The input has signal. Output usually resumes at the next phrase; Pause and Start restart the engine.",
+      };
+    }
+    if (live && inputLevel.clipping) {
+      return {
+        severity: "warn",
+        title: "Input clipping",
+        body: "Lower the gain at the mixer or on the audio interface.",
+      };
+    }
+    return null;
+  })();
 
-  const roomOpen = phase !== "idle";
-  const translating = phase === "translating";
+  const localTally: { tone: TallyTone; text: string } = (() => {
+    switch (session.phase) {
+      case "live":
+        return mode === "original" ? { tone: "original", text: "Original" } : { tone: "onair", text: "On air" };
+      case "reconnecting":
+        return { tone: "warn", text: view.label };
+      case "starting":
+      case "opening":
+      case "stopping":
+      case "closing":
+        return { tone: "warn", text: view.label };
+      case "room-open":
+        return { tone: "standby", text: session.everLive ? "Paused" : "Standby" };
+      case "failed":
+        return { tone: "fault", text: "Fault" };
+      default:
+        return { tone: "off", text: "Off" };
+    }
+  })();
 
-  // Header status — phase-aware.
-  const headerStatus: { label: string; dot: string } =
-    phase === "idle"
-      ? { label: "Idle", dot: "bg-zinc-400" }
-      : phase === "room-open"
+  const inputStrip: StripModel = {
+    key: "input",
+    code: micStream ? (rawAudio ? "Raw audio" : "Browser processing on") : previewStream ? "Input test" : "Not captured",
+    label: inputLabel.length > 28 ? `${inputLabel.slice(0, 27)}…` : inputLabel,
+    tally: !inputActive
+      ? { tone: "off", text: "No capture" }
+      : inputLevel.silentMs > INPUT_SILENCE_ALERT_MS
+        ? { tone: "warn", text: "No signal" }
+        : inputLevel.clipping
+          ? { tone: "warn", text: "Clipping" }
+          : { tone: "onair", text: "Signal ok" },
+    level: inputActive ? inputLevel.level : null,
+    stats: [
+      { label: "Peak", value: inputActive ? formatDb(inputLevel.peakDb) : "None" },
+      { label: "Clip", value: inputLevel.clipping ? "Yes" : "None", tone: inputLevel.clipping ? "warn" : undefined },
+      {
+        label: "Last speech",
+        value: !inputActive ? "None" : inputLevel.silentMs < 1500 ? "Now" : `${Math.round(inputLevel.silentMs / 1000)} s ago`,
+        tone: inputActive && inputLevel.silentMs > INPUT_SILENCE_ALERT_MS ? "warn" : undefined,
+      },
+    ],
+    meta: !inputActive
+      ? "Not captured"
+      : `${inputLevel.silentMs < 1500 ? "Speaking" : `Silent ${Math.round(inputLevel.silentMs / 1000)} s`} · peak ${formatDb(inputLevel.peakDb)}`,
+    fault: inputActive && live && inputLevel.silentMs > INPUT_SILENCE_ALERT_MS,
+    actions: (
+      <>
+        <Button size="sm" onClick={() => setShowInputPicker((v) => !v)} ariaPressed={showInputPicker}>
+          Change input
+        </Button>
+        <Button
+          size="sm"
+          tone={monitor === "source" ? "live" : "ghost"}
+          ariaPressed={monitor === "source"}
+          onClick={() => setMonitor((m) => (m === "source" ? "program" : "source"))}
+          disabled={!micStream}
+        >
+          {monitor === "source" ? "Listening" : "Listen"}
+        </Button>
+      </>
+    ),
+  };
+
+  const responseText =
+    mode === "original" ? "Original audio" : secs(latencyMs) ?? (live ? "Measuring" : "Not measured");
+
+  const localStrip: StripModel = {
+    key: targetLanguage,
+    code: targetLanguage,
+    label: mode === "original" ? `${langLabel}, original audio` : langLabel,
+    lang: targetLanguage,
+    tally: localTally,
+    level: outputLevel.active ? outputLevel.level : null,
+    stats: [
+      { label: "Response", value: responseText, tone: mode === "original" || latencyMs == null ? "dim" : undefined },
+      { label: "Listeners", value: LIVEKIT_ENABLED ? String(participantCount) : "No room" },
+      { label: "On air", value: session.liveSince ? clockOf(onAirMs) : "Off", tone: session.liveSince ? undefined : "dim" },
+    ],
+    meta: [
+      LIVEKIT_ENABLED ? `${participantCount} listening` : "No room server",
+      mode === "original" ? "speaker audio" : latencyMs != null ? `${secs(latencyMs)} response` : null,
+    ]
+      .filter(Boolean)
+      .join(" · "),
+    fault: session.phase === "reconnecting" || session.phase === "failed",
+    actions: (
+      <>
+        <Button
+          size="sm"
+          tone={monitor === "program" ? "live" : "default"}
+          ariaPressed={monitor === "program"}
+          onClick={() => setMonitor((m) => (m === "program" ? "mute" : "program"))}
+          testId="monitor-local"
+        >
+          {monitor === "program" ? "Monitoring" : "Monitor"}
+        </Button>
+        {view.canStop ? (
+          <Button size="sm" onClick={() => void handleStop()}>
+            {session.hasRoom ? "Pause" : "Stop"}
+          </Button>
+        ) : view.canStart ? (
+          <Button size="sm" onClick={() => void handleStart()}>
+            Start
+          </Button>
+        ) : null}
+      </>
+    ),
+  };
+
+  const remoteStrips: StripModel[] = remoteOthers.map((r) => {
+    const st = r.status?.state;
+    const original = r.status?.mode === "original";
+    const tally: { tone: TallyTone; text: string } =
+      st === "live" || !st
+        ? original
+          ? { tone: "original", text: "Original" }
+          : { tone: "onair", text: "On air" }
+        : st === "reconnecting"
+          ? { tone: "warn", text: "Reconnecting" }
+          : st === "interrupted"
+            ? { tone: "fault", text: "Interrupted" }
+            : st === "paused"
+              ? { tone: "standby", text: "Paused" }
+              : { tone: "standby", text: "Standby" };
+    const since = r.status?.sinceMs ?? null;
+    return {
+      key: r.code,
+      code: r.code,
+      label: original ? `${r.label}, original audio` : r.label,
+      lang: r.code,
+      tally,
+      level: null,
+      levelNote: "Level metered in its own tab",
+      stats: [
+        { label: "Response", value: original ? "Original audio" : secs(r.status?.responseMs) ?? "Not reported", tone: "dim" },
+        { label: "Listeners", value: String(r.status?.listeners ?? 0) },
+        { label: "On air", value: since ? clockOf(now - since) : "Off", tone: since ? undefined : "dim" },
+      ],
+      meta: `${r.status?.listeners ?? 0} listening${r.status?.responseMs ? ` · ${secs(r.status.responseMs)} response` : ""} · other tab`,
+      fault: st === "reconnecting" || st === "interrupted",
+      source: "Room server, refreshed every 5 s",
+      actions: (
+        <a
+          href={`/listen/${encodeURIComponent(r.room)}`}
+          target="_blank"
+          rel="noopener"
+          className={buttonClass("ghost", "sm")}
+        >
+          Monitor
+        </a>
+      ),
+    };
+  });
+
+  const listenersSee: ListenerPreview[] = [];
+  if (broadcast) {
+    const key = BROADCAST_TO_DISPLAY[broadcast];
+    const s = LISTENER_STRINGS[uiLangForRoom(targetLanguage)].status[key];
+    listenersSee.push({
+      code: targetLanguage,
+      text: s.tally,
+      tone: broadcast === "live" ? "ok" : broadcast === "reconnecting" || broadcast === "interrupted" ? "warn" : "dim",
+      lang: uiLangForRoom(targetLanguage),
+    });
+  }
+  for (const r of remoteOthers) {
+    const st = (r.status?.state ?? "live") as BroadcastState;
+    const key = BROADCAST_TO_DISPLAY[st] ?? "live";
+    listenersSee.push({
+      code: r.code,
+      text: LISTENER_STRINGS[uiLangForRoom(r.code)].status[key].tally,
+      tone: st === "live" ? "ok" : st === "reconnecting" || st === "interrupted" ? "warn" : "dim",
+      lang: uiLangForRoom(r.code),
+    });
+  }
+
+  const usedCodes = new Set([targetLanguage, ...remoteOthers.map((r) => r.code)]);
+  const addable = TARGET_LANGUAGES.filter((l) => !usedCodes.has(l.code));
+  const addCode = addable.some((l) => l.code === addLang) ? addLang : (addable[0]?.code ?? "");
+  const addHref = `/operator?event=${encodeURIComponent(eventSlug)}&lang=${encodeURIComponent(addCode)}${
+    eventTitle.trim() ? `&title=${encodeURIComponent(eventTitle.trim())}` : ""
+  }`;
+
+  const sourceLines = captionLines(source);
+  const targetLines = captionLines(target);
+
+  const model: OperatorModel = {
+    input: inputStrip,
+    channels: [localStrip, ...remoteStrips],
+    alert,
+    okLine: live ? "Input, output and room checked continuously" : "Input and room checked continuously",
+    source:
+      mode === "translate" && captureSource
         ? {
-            label:
-              participantCount > 0
-                ? `Room open · ${participantCount} listening`
-                : "Room open · waiting for listeners",
-            dot: "bg-sky-500",
+            title: "Source",
+            badge: { text: inputLabel, tone: "dim" },
+            lines: sourceLines,
+            lang: "und",
+            placeholder: "The speaker's words appear here.",
           }
-        : (() => {
-            const os = deriveOverall(openaiStatus, geminiStatus);
-            return { label: STATUS_LABEL[os], dot: STATUS_DOT_CLASS[os] };
-          })();
+        : null,
+    target:
+      mode === "translate"
+        ? {
+            title: `${targetLanguage.toUpperCase()} · ${langLabel}`,
+            badge: monitor === "program" ? { text: "In your headphones", tone: "ok" } : null,
+            lines: targetLines,
+            lang: targetLanguage,
+            placeholder: live ? "Translation appears here." : "Translation appears here once it starts.",
+          }
+        : null,
+    qr:
+      LIVEKIT_ENABLED && session.hasRoom && eventUrl
+        ? {
+            url: eventUrl,
+            caption: `One code for every language of this event${
+              remoteOthers.length ? ` (${[targetLanguage, ...remoteOthers.map((r) => r.code)].map((c) => c.toUpperCase()).join(", ")})` : ""
+            }`,
+            actions: (
+              <>
+                <Button size="sm" onClick={() => void copy("event")}>
+                  {copied === "event" ? "Copied" : "Copy link"}
+                </Button>
+                <Button size="sm" tone="ghost" onClick={() => void copy("room")} title={roomUrl}>
+                  {copied === "room" ? "Copied" : `Copy ${targetLanguage.toUpperCase()} link`}
+                </Button>
+              </>
+            ),
+          }
+        : null,
+    listenersSee,
+    addLanguage:
+      LIVEKIT_ENABLED && session.hasRoom && addable.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-2 text-sm text-silk">
+            <span>Add language</span>
+            <select
+              value={addCode}
+              onChange={(e) => setAddLang(e.target.value)}
+              className="min-h-11 rounded-md border border-btn-line bg-panel px-2 text-[15px] text-ink"
+            >
+              {addable.map((l) => (
+                <option key={l.code} value={l.code}>
+                  {l.label} ({l.code})
+                </option>
+              ))}
+            </select>
+          </label>
+          <a href={addHref} target="_blank" rel="noopener" className={buttonClass("default", "sm")} data-testid="add-language">
+            Open in a new tab
+          </a>
+          <p className="w-full text-xs text-silk">Each language runs in its own operator tab with the same event ID.</p>
+        </div>
+      ) : null,
+    log: log.map((e) => ({ at: clockOf(e.atMs), text: e.text })),
+  };
+
+  const tallyTone: TallyTone =
+    view.tone === "onair"
+      ? mode === "original"
+        ? "original"
+        : "onair"
+      : view.tone === "warn" || view.tone === "busy"
+        ? "warn"
+        : view.tone === "fault"
+          ? "fault"
+          : view.tone === "standby"
+            ? "standby"
+            : "off";
+
+  const statusLine =
+    session.phase === "failed" && session.error
+      ? `Fault: ${describeOperatorError(session.error.scope, session.error.message).title}`
+      : view.label;
 
   return (
-    <div className="flex flex-1 flex-col bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
-      <header className="border-b border-zinc-200 bg-white px-6 py-4 dark:border-zinc-800 dark:bg-zinc-900">
-        <div className="mx-auto flex max-w-6xl items-center justify-between">
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight">
-              Operator
-            </h1>
-            <p className="text-sm text-zinc-500 dark:text-zinc-400">
-              Live translation · OpenAI gpt-realtime-translate · LiveKit fan-out
+    <div className="flex flex-1 flex-col" data-testid="operator">
+      <SessionBar
+        tally={{ tone: tallyTone, text: view.label }}
+        clock={clockOf(session.liveSince ? onAirMs : uptimeMs)}
+        title={eventTitle.trim() || "Untitled event"}
+        subtitle={`Event ${eventSlug} · ${langLabel}${mode === "original" ? " original audio" : ""}`}
+        figures={[
+          { label: "Listeners", value: LIVEKIT_ENABLED ? String(listenersTotal) : "None" },
+          { label: "Billing", value: `$${(telemetrySnapshot?.estCostUsd ?? 0).toFixed(2)}` },
+          { label: "Faults", value: String(telemetrySnapshot?.errors ?? 0), tone: (telemetrySnapshot?.errors ?? 0) > 0 ? "warn" : undefined },
+        ]}
+        actions={
+          <SessionActions
+            canMark={Boolean(telemetrySnapshot?.running)}
+            onMark={handleMark}
+            primary={primary}
+            end={view.canClose ? { label: "End session", onClick: () => setConfirmEnd(true) } : null}
+          />
+        }
+      />
+      <p role="status" aria-live="polite" className="sr-only" data-testid="operator-status-live">
+        {statusLine}
+      </p>
+
+      <main className="mx-auto flex w-full max-w-[1600px] flex-1 flex-col gap-5 px-4 py-5">
+        {confirmEnd ? (
+          <div
+            role="alertdialog"
+            aria-labelledby="end-title"
+            className="flex flex-wrap items-center gap-3 rounded-md border border-error-ink bg-error-wash px-5 py-4"
+          >
+            <p id="end-title" className="flex-1 text-base text-ink">
+              <b>End the session?</b> Every listener of {targetLanguage.toUpperCase()} is disconnected and the session report is written.
+            </p>
+            <Button tone="primary" onClick={() => void handleClose()} testId="confirm-end">
+              End session
+            </Button>
+            <Button tone="ghost" onClick={() => setConfirmEnd(false)}>
+              Cancel
+            </Button>
+          </div>
+        ) : null}
+
+        {view.canConfigure ? (
+          <SetupPanel
+            eventId={eventId}
+            setEventId={setEventId}
+            eventTitle={eventTitle}
+            setEventTitle={setEventTitle}
+            targetLanguage={targetLanguage}
+            setTargetLanguage={setTargetLanguage}
+            mode={mode}
+            setMode={setMode}
+            captureSource={captureSource}
+            setCaptureSource={setCaptureSource}
+            rawAudio={rawAudio}
+            setRawAudio={setRawAudio}
+            listenerBaseUrl={listenerBaseUrl}
+            setListenerBaseUrl={setListenerBaseUrl}
+            audioDevices={audioDevices}
+            testing={Boolean(previewStream)}
+            onTest={() => void toggleTest()}
+            inputLevel={previewStream ? inputLevel.level : null}
+            primary={primary}
+            alert={alert}
+            room={room}
+          />
+        ) : null}
+
+        {showInputPicker ? (
+          <section className="flex flex-wrap items-end gap-3 rounded-md border border-line bg-panel p-4" aria-label="Change input">
+            <DeviceSelect
+              label="Input"
+              value={audioDevices.selectedInput}
+              onChange={audioDevices.setSelectedInput}
+              defaultLabel={AUDIO_DEFAULTS.inputLabel}
+              devices={audioDevices.inputs}
+            />
+            <Button size="sm" onClick={() => void audioDevices.requestPermission()}>
+              {audioDevices.hasPermission ? "Refresh devices" : "Detect devices"}
+            </Button>
+            <p className="text-sm text-silk">
+              {micStream ? "A new input applies at the next Start." : "Applies when translation starts."}
+            </p>
+            <Button size="sm" tone="ghost" onClick={() => setShowInputPicker(false)} className="ml-auto">
+              Close
+            </Button>
+          </section>
+        ) : null}
+
+        {!view.canConfigure ? <OperatorBody model={model} /> : null}
+
+        <details className="rounded-md border border-line bg-panel">
+          <summary className="flex min-h-12 cursor-pointer items-center px-4 font-semibold text-ink">
+            Session details and audio routing
+          </summary>
+          <div className="flex flex-col gap-4 border-t border-line p-4">
+            <div className="flex flex-wrap items-end gap-4">
+              <DeviceSelect
+                label={`Monitor output${audioDevices.outputSupported ? "" : " (not supported in this browser)"}`}
+                value={audioDevices.selectedOutput}
+                onChange={audioDevices.setSelectedOutput}
+                defaultLabel={AUDIO_DEFAULTS.outputLabel}
+                devices={audioDevices.outputs}
+                disabled={!audioDevices.outputSupported}
+              />
+              <Segmented
+                label="Monitor"
+                value={monitor}
+                onChange={setMonitor}
+                options={[
+                  { value: "program", label: mode === "original" ? "Program" : "Translation" },
+                  { value: "source", label: "Input" },
+                  { value: "mute", label: "Mute" },
+                ]}
+              />
+              <Check
+                checked={broadcastToTab}
+                onChange={setBroadcastToTab}
+                label="Copy the translation to tab audio"
+                hint="For screen sharing while the monitor goes to a specific output"
+              />
+            </div>
+            <TelemetryPanel snapshot={telemetrySnapshot} savedBenchmarkPath={savedBenchmarkPath} />
+            <p className="text-sm text-silk">
+              Session reports and recordings are written to benchmarks/ on this machine when the session ends.
+              {telemetrySnapshot?.running ? ` Running for ${formatDuration(telemetrySnapshot.uptimeMs)}.` : ""}
             </p>
           </div>
-          <div className="flex items-center gap-2 text-sm font-medium">
-            <span
-              className={`inline-block h-2.5 w-2.5 rounded-full ${headerStatus.dot}`}
-              aria-hidden
-            />
-            <span>{headerStatus.label}</span>
-          </div>
-        </div>
-      </header>
+        </details>
 
-      <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-6 py-8">
-        <section className="grid grid-cols-1 gap-4 rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900 md:grid-cols-[1fr_1fr_auto_auto] md:items-end">
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-              Event ID
-            </span>
-            <input
-              type="text"
-              value={eventId}
-              onChange={(e) => setEventId(e.target.value)}
-              disabled={roomOpen}
-              placeholder="demo"
-              className="h-10 rounded-md border border-zinc-300 bg-white px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-950"
-            />
-          </label>
+        <p className="text-sm text-silk">
+          Listener pages: <Link className="underline underline-offset-4" href={`/e/${eventSlug}`}>event page</Link>
+          {" · "}
+          <Link className="underline underline-offset-4" href={`/listen/${room}`}>{targetLanguage.toUpperCase()} only</Link>
+          {" · "}
+          <Link className="underline underline-offset-4" href="/replay/operator">replay demo</Link>
+        </p>
 
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-              Target language
-            </span>
-            <select
-              value={targetLanguage}
-              onChange={(e) => setTargetLanguage(e.target.value)}
-              disabled={roomOpen}
-              className="h-10 rounded-md border border-zinc-300 bg-white px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-950"
-            >
-              {TARGET_LANGUAGES.map((lang) => (
-                <option key={lang.code} value={lang.code}>
-                  {lang.label} ({lang.code})
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label
-            className="flex items-center gap-2 text-sm"
-            title="Adds gpt-realtime-whisper for input transcription. Increases OpenAI API cost by ~50%."
-          >
-            <input
-              type="checkbox"
-              checked={captureSource}
-              onChange={(e) => setCaptureSource(e.target.checked)}
-              disabled={roomOpen}
-              className="h-4 w-4 rounded border-zinc-300 text-emerald-600 focus:ring-emerald-500"
-            />
-            <span>
-              Capture source{" "}
-              <span className="text-xs text-zinc-500 dark:text-zinc-400">
-                (+50% cost)
-              </span>
-            </span>
-          </label>
-
-          <div className="flex flex-col gap-2">
-            {phase === "idle" ? (
-              <button
-                type="button"
-                onClick={
-                  LIVEKIT_ENABLED ? handleOpenRoom : handleStartTranslation
-                }
-                className="h-10 rounded-md bg-emerald-600 px-5 text-sm font-medium text-white shadow-sm transition hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 dark:focus:ring-offset-zinc-900"
-              >
-                {LIVEKIT_ENABLED ? "Open room" : "Start translation"}
-              </button>
-            ) : null}
-            {phase === "room-open" ? (
-              <>
-                <button
-                  type="button"
-                  onClick={handleStartTranslation}
-                  className="h-10 rounded-md bg-emerald-600 px-5 text-sm font-medium text-white shadow-sm transition hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 dark:focus:ring-offset-zinc-900"
-                >
-                  Start translation
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCloseRoom}
-                  className="h-10 rounded-md border border-zinc-300 bg-white px-5 text-sm font-medium shadow-sm transition hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800"
-                >
-                  Close room
-                </button>
-              </>
-            ) : null}
-            {phase === "translating" ? (
-              <>
-                <button
-                  type="button"
-                  onClick={handleStopTranslation}
-                  className="h-10 rounded-md bg-rose-600 px-5 text-sm font-medium text-white shadow-sm transition hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:ring-offset-2 dark:focus:ring-offset-zinc-900"
-                >
-                  Stop translation
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCloseRoom}
-                  className="h-10 rounded-md border border-zinc-300 bg-white px-5 text-sm font-medium shadow-sm transition hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800"
-                >
-                  Close room
-                </button>
-              </>
-            ) : null}
-          </div>
-        </section>
-
-        {/* Audio I/O selection */}
-        <section className="grid grid-cols-1 gap-4 rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900 md:grid-cols-[1fr_1fr_auto] md:items-end">
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-              Microphone (input)
-            </span>
-            <select
-              value={audioDevices.selectedInput}
-              onChange={(e) => audioDevices.setSelectedInput(e.target.value)}
-              disabled={translating}
-              className="h-10 rounded-md border border-zinc-300 bg-white px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-950"
-            >
-              <option value="">{AUDIO_DEFAULTS.inputLabel}</option>
-              {audioDevices.inputs.map((d) => (
-                <option key={d.deviceId} value={d.deviceId}>
-                  {d.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-              Output (translation playback)
-              {!audioDevices.outputSupported ? (
-                <span className="ml-1 text-rose-500">
-                  · not supported in this browser
-                </span>
-              ) : null}
-            </span>
-            <select
-              value={audioDevices.selectedOutput}
-              onChange={(e) => audioDevices.setSelectedOutput(e.target.value)}
-              disabled={!audioDevices.outputSupported}
-              className="h-10 rounded-md border border-zinc-300 bg-white px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-950"
-            >
-              <option value="">{AUDIO_DEFAULTS.outputLabel}</option>
-              {audioDevices.outputs.map((d) => (
-                <option key={d.deviceId} value={d.deviceId}>
-                  {d.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <div className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium uppercase tracking-wide text-transparent">
-              .
-            </span>
-            <button
-              type="button"
-              onClick={() => void audioDevices.requestPermission()}
-              className="h-10 rounded-md border border-zinc-300 bg-white px-4 text-sm font-medium shadow-sm transition hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800"
-              title={
-                audioDevices.hasPermission
-                  ? "Re-scan devices (e.g. after plugging a new mic)"
-                  : "Request mic permission to see device names"
-              }
-            >
-              {audioDevices.hasPermission ? "Refresh devices" : "Detect devices"}
-            </button>
-          </div>
-          <label
-            className="col-span-full flex items-center gap-2 text-sm"
-            title="Disables browser echoCancellation / noiseSuppression / autoGainControl. Turn ON for clean digital inputs (VB-Audio Cable, line-level from a venue mixing board) where DSP introduces artifacts. Leave OFF for laptop mics in noisy rooms."
-          >
-            <input
-              type="checkbox"
-              checked={rawAudio}
-              onChange={(e) => setRawAudio(e.target.checked)}
-              disabled={translating}
-              className="h-4 w-4 rounded border-zinc-300 text-emerald-600 focus:ring-emerald-500"
-            />
-            <span>
-              Raw audio{" "}
-              <span className="text-xs text-zinc-500 dark:text-zinc-400">
-                (disable browser DSP. For VB-Cable / line-level feeds)
-              </span>
-            </span>
-          </label>
-        </section>
-
-        {/* Monitor toggle */}
-        <section className="flex flex-wrap items-center gap-3 rounded-lg border border-zinc-200 bg-white px-5 py-3 text-sm dark:border-zinc-800 dark:bg-zinc-900">
-          <span className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-            Monitor:
-          </span>
-          {(
-            [
-              { value: "source", label: "Source" },
-              { value: "openai", label: "Translation" },
-              { value: "mute", label: "Mute" },
-            ] as { value: MonitorChoice; label: string }[]
-          ).map(({ value, label }) => (
-            <label
-              key={value}
-              className="flex items-center gap-1.5 text-sm"
-              title={
-                value === "source"
-                  ? "Listen to the raw mic input. Useful to verify the mic is picking up cleanly. Use headphones to avoid feedback."
-                  : value === "openai"
-                    ? "Listen to the OpenAI translated audio."
-                    : "Silence both."
-              }
-            >
-              <input
-                type="radio"
-                name="monitor"
-                value={value}
-                checked={monitor === value}
-                onChange={() => setMonitor(value)}
-                className="h-4 w-4 border-zinc-300 text-emerald-600 focus:ring-emerald-500"
-              />
-              {label}
-            </label>
-          ))}
-          <label
-            className="flex items-center gap-2 text-sm"
-            title="Plays the translated audio to the system default device in addition to the selected output. Lets screen-share / tab-audio capture the translation even when you're monitoring through a specific headphone."
-          >
-            <input
-              type="checkbox"
-              checked={broadcastToTab}
-              onChange={(e) => setBroadcastToTab(e.target.checked)}
-              className="h-4 w-4 rounded border-zinc-300 text-emerald-600 focus:ring-emerald-500"
-            />
-            <span>
-              Broadcast to tab audio{" "}
-              <span className="text-xs text-zinc-500 dark:text-zinc-400">
-                (for screen-share)
-              </span>
-            </span>
-          </label>
-        </section>
-
-        {/* Mark moment — operator click bookmarks the current second in the
-            transcript + telemetry log. Doubles as ground-truth latency
-            samples ("I heard this start now"). */}
-        {phase !== "idle" ? (
-          <section className="flex flex-wrap items-center gap-3 rounded-lg border border-zinc-200 bg-white px-5 py-3 text-sm dark:border-zinc-800 dark:bg-zinc-900">
-            <button
-              type="button"
-              onClick={handleMark}
-              className="h-9 rounded-md bg-amber-500 px-4 text-sm font-medium text-white shadow-sm transition hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-2 dark:focus:ring-offset-zinc-900"
-              title="Bookmark this moment in the transcript + event log. Use it to flag clip-worthy phrases or to drop a ground-truth latency sample."
-            >
-              📍 Mark moment
-            </button>
-            <span className="text-xs text-zinc-500 dark:text-zinc-400">
-              {telemetrySnapshot?.marksCount ?? 0} mark
-              {(telemetrySnapshot?.marksCount ?? 0) === 1 ? "" : "s"} placed
-            </span>
-            <span className="ml-auto text-xs text-zinc-500 dark:text-zinc-400">
-              Marks land in <code className="font-mono">marks.json</code> + the
-              event log at session end.
-            </span>
-          </section>
-        ) : null}
-
-        {errorMessages.length > 0 ? (
-          <div className="rounded-lg border border-rose-300 bg-rose-50 p-4 text-sm text-rose-900 dark:border-rose-800 dark:bg-rose-950 dark:text-rose-200">
-            <strong className="font-semibold">Errors:</strong>
-            <ul className="mt-1 list-disc pl-5">
-              {errorMessages.map((m, i) => (
-                <li key={i}>{m}</li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-
-        {reconnectInfo ? (
-          <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
-            {reconnectInfo}
-          </div>
-        ) : null}
-
-        {LIVEKIT_ENABLED && roomOpen ? (
-          <section className="grid grid-cols-1 gap-4 rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900 md:grid-cols-[auto_1fr] md:gap-6">
-            <div className="flex items-center justify-center rounded-md bg-white p-3 ring-1 ring-zinc-200 dark:bg-zinc-50">
-              {listenerUrl ? (
-                <QRCodeSVG value={listenerUrl} size={176} includeMargin={false} />
-              ) : null}
-            </div>
-            <div className="flex flex-col justify-center gap-3">
-              <div className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-                Listener link · room <code className="font-mono">{room}</code>
-              </div>
-              <label className="flex flex-col gap-1">
-                <span className="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-600">
-                  Base URL: must be reachable from phones (not localhost)
-                </span>
-                <input
-                  type="text"
-                  value={listenerBaseUrl}
-                  onChange={(e) => setListenerBaseUrl(e.target.value)}
-                  placeholder="http://192.168.1.50:3000"
-                  className="h-8 rounded-md border border-zinc-300 bg-white px-2 font-mono text-xs shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:border-zinc-700 dark:bg-zinc-950"
-                />
-              </label>
-              <div className="break-all font-mono text-sm">
-                {listenerUrl || "—"}
-              </div>
-              {phase === "room-open" ? (
-                <div className="rounded-md border border-sky-300 bg-sky-50 px-3 py-2 text-xs text-sky-900 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-200">
-                  Room is open. Share this link now. Listeners who connect will
-                  hear &ldquo;waiting for the speaker&rdquo; until you click{" "}
-                  <strong>Start translation</strong>.
-                </div>
-              ) : null}
-              <div className="flex flex-wrap items-center gap-3 text-xs text-zinc-500 dark:text-zinc-400">
-                <button
-                  type="button"
-                  onClick={handleCopyUrl}
-                  className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 font-medium shadow-sm hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800"
-                >
-                  {copied ? "Copied!" : "Copy URL"}
-                </button>
-                <span>
-                  {participantCount} listener{participantCount === 1 ? "" : "s"}
-                </span>
-                <span>LiveKit: {publisherStatus}</span>
-                <span>
-                  Translation: {phase === "translating" ? "live" : "not started"}
-                </span>
-              </div>
-            </div>
-          </section>
-        ) : null}
-
-        {LIVEKIT_ENABLED && roomOpen ? (
-          <section
-            className="grid grid-cols-1 gap-4 rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900 md:grid-cols-[auto_1fr] md:gap-6"
-            data-testid="event-link"
-          >
-            <div className="flex items-center justify-center rounded-md bg-white p-3 ring-1 ring-zinc-200 dark:bg-zinc-50">
-              {eventUrl ? (
-                <QRCodeSVG value={eventUrl} size={128} includeMargin={false} />
-              ) : null}
-            </div>
-            <div className="flex flex-col justify-center gap-3">
-              <div className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-                Event link · all languages
-              </div>
-              <div className="break-all font-mono text-sm">
-                {eventUrl}
-              </div>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                Listeners see every language of this event that has a room
-                open and can switch between them. Open one dashboard tab per
-                language with the same event ID.
-              </p>
-              <div className="flex flex-wrap items-center gap-3 text-xs">
-                <button
-                  type="button"
-                  onClick={handleCopyEventUrl}
-                  className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 font-medium shadow-sm hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800"
-                >
-                  {eventCopied ? "Copied!" : "Copy URL"}
-                </button>
-              </div>
-            </div>
-          </section>
-        ) : null}
-
-        <TelemetryPanel
-          snapshot={telemetrySnapshot}
-          geminiEnabled={useGemini}
-          savedBenchmarkPath={savedBenchmarkPath}
-        />
-
-        <section className="grid flex-1 grid-cols-1 gap-4 md:grid-cols-2">
-          <TranscriptPanel
-            title="Source (detected)"
-            text={sourceTranscript}
-            scrollRef={sourceScrollRef}
-            placeholder={
-              captureSource
-                ? "Speak into the microphone…"
-                : "Source capture disabled (toggle on to enable; +50% OpenAI cost)"
-            }
-            badgeStatus={captureSource ? openaiStatus : "idle"}
-            badgeLabel={captureSource ? "from OpenAI ASR" : "off"}
-          />
-          <TranscriptPanel
-            title={`Translation → ${targetLanguageLabel}`}
-            text={openaiTranscript}
-            scrollRef={openaiScrollRef}
-            placeholder="Translation…"
-            badgeStatus={openaiStatus}
-            badgeLabel={
-              openaiLatencyMs !== null
-                ? `Latency ${(openaiLatencyMs / 1000).toFixed(2)} s`
-                : STATUS_LABEL[openaiStatus]
-            }
-          />
-        </section>
-
-        {/* Source-mic monitor — operator hears the raw input when
-           Monitor=Source. Starts muted; the monitor-effect un-mutes on demand. */}
         <audio ref={sourceAudioRef} autoPlay playsInline muted />
-        <audio ref={openaiAudioRef} autoPlay playsInline />
-        <audio ref={geminiAudioRef} autoPlay playsInline />
-        {/* Secondary audio elements always playing at the default device — they
-           feed screen-share tab audio when the primary sinks are routed to a
-           specific output (e.g., monitor headphones). Muted via useEffect when
-           broadcastToTab is off or when no specific output is selected. */}
-        <audio ref={openaiBroadcastAudioRef} autoPlay playsInline />
-        <audio ref={geminiBroadcastAudioRef} autoPlay playsInline />
-
-        <footer className="text-xs text-zinc-500 dark:text-zinc-400">
-          OpenAI gpt-realtime-translate · self-hosted LiveKit · session
-          reports and recordings are saved locally to benchmarks/.
-        </footer>
+        <audio ref={programAudioRef} autoPlay playsInline />
+        {/* Plays at the system default device so tab capture hears the
+            translation while the monitor goes to a specific output. */}
+        <audio ref={broadcastAudioRef} autoPlay playsInline />
       </main>
     </div>
   );
 }
 
-function deriveOverall(
-  openai: RealtimeStatus,
-  gemini: GeminiStatus,
-): EngineStatus {
-  const inProgress = (s: EngineStatus) =>
-    s === "creating-session" || s === "negotiating";
-  if (openai === "live" || gemini === "live") return "live";
-  if (openai === "error" || gemini === "error") return "error";
-  if (inProgress(openai) || inProgress(gemini)) return "creating-session";
-  return "idle";
-}
+/* ------------------------------------------------------------------ setup */
 
-function TranscriptPanel({
-  title,
-  text,
-  scrollRef,
-  placeholder,
-  badgeStatus,
-  badgeLabel,
+type AudioDevicesApi = ReturnType<typeof useAudioDevices>;
+
+function DeviceSelect({
+  label,
+  value,
+  onChange,
+  defaultLabel,
+  devices,
+  disabled,
 }: {
-  title: string;
-  text: string;
-  scrollRef: React.RefObject<HTMLDivElement | null>;
-  placeholder: string;
-  badgeStatus: EngineStatus;
-  badgeLabel: string;
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  defaultLabel: string;
+  devices: AudioDevicesApi["inputs"];
+  disabled?: boolean;
 }) {
   return (
-    <div className="flex h-72 flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 lg:h-96">
-      <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-2 dark:border-zinc-800">
-        <span className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-          {title}
-        </span>
-        <span className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-          <span
-            className={`inline-block h-2 w-2 rounded-full ${STATUS_DOT_CLASS[badgeStatus]}`}
-            aria-hidden
-          />
-          {badgeLabel}
-        </span>
-      </div>
-      <div
-        ref={scrollRef}
-        className="flex-1 overflow-y-auto whitespace-pre-wrap px-4 py-3 text-sm leading-relaxed"
+    <label className="flex min-w-56 flex-col gap-1.5">
+      <span className="text-sm font-medium text-silk">{label}</span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        className="min-h-11 rounded-md border border-btn-line bg-panel px-3 text-[15px] text-ink disabled:opacity-50"
       >
-        {text ? (
-          text
-        ) : (
-          <span className="text-zinc-400 dark:text-zinc-600">
-            {placeholder}
-          </span>
-        )}
+        <option value="">{defaultLabel}</option>
+        {devices.map((d) => (
+          <option key={d.deviceId} value={d.deviceId}>
+            {d.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function Field({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="flex min-w-0 flex-col gap-1.5">
+      <span className="text-sm font-medium text-silk">{label}</span>
+      {children}
+      {hint ? <span className="text-sm text-silk">{hint}</span> : null}
+    </label>
+  );
+}
+
+function Check({
+  checked,
+  onChange,
+  label,
+  hint,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+  hint?: string;
+}) {
+  return (
+    <label className="flex min-h-11 cursor-pointer items-start gap-3">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="mt-0.5 h-5 w-5 shrink-0 accent-[var(--green)]"
+      />
+      <span>
+        <span className="block text-[15px] font-medium text-ink">{label}</span>
+        {hint ? <span className="block text-sm text-silk">{hint}</span> : null}
+      </span>
+    </label>
+  );
+}
+
+const inputClass =
+  "min-h-11 rounded-md border border-btn-line bg-panel px-3 text-[15px] text-ink placeholder:text-dim";
+
+function SetupPanel(p: {
+  eventId: string;
+  setEventId: (v: string) => void;
+  eventTitle: string;
+  setEventTitle: (v: string) => void;
+  targetLanguage: string;
+  setTargetLanguage: (v: string) => void;
+  mode: ChannelMode;
+  setMode: (v: ChannelMode) => void;
+  captureSource: boolean;
+  setCaptureSource: (v: boolean) => void;
+  rawAudio: boolean;
+  setRawAudio: (v: boolean) => void;
+  listenerBaseUrl: string;
+  setListenerBaseUrl: (v: string) => void;
+  audioDevices: AudioDevicesApi;
+  testing: boolean;
+  onTest: () => void;
+  inputLevel: number | null;
+  primary: { label: string; onClick: () => void; disabled?: boolean } | null;
+  alert: AlertModel | null;
+  room: string;
+}) {
+  return (
+    <section className="flex flex-col gap-5" aria-label="Setup" data-testid="setup">
+      {p.alert ? <AlertBox alert={p.alert} /> : null}
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+        <div className="flex flex-col gap-4 rounded-md border border-line bg-panel p-5">
+          <h2 className="font-cond text-xl font-semibold text-ink">Event and channel</h2>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Event ID" hint={`Room ${p.room}`}>
+              <input
+                type="text"
+                value={p.eventId}
+                onChange={(e) => p.setEventId(e.target.value)}
+                placeholder="demo"
+                className={inputClass}
+              />
+            </Field>
+            <Field label="Event title" hint="Shown to listeners">
+              <input
+                type="text"
+                value={p.eventTitle}
+                onChange={(e) => p.setEventTitle(e.target.value.slice(0, 120))}
+                placeholder="Rice University address"
+                className={inputClass}
+              />
+            </Field>
+            <Field label="Language">
+              <select
+                value={p.targetLanguage}
+                onChange={(e) => p.setTargetLanguage(e.target.value)}
+                className={inputClass}
+              >
+                {TARGET_LANGUAGES.map((l) => (
+                  <option key={l.code} value={l.code}>
+                    {l.label} ({l.code})
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <div className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium text-silk">Channel</span>
+              <Segmented
+                label="Channel"
+                hideLabel
+                value={p.mode}
+                onChange={p.setMode}
+                options={[
+                  { value: "translate", label: "Translation" },
+                  { value: "original", label: "Original audio" },
+                ]}
+              />
+              <span className="text-sm text-silk">
+                {p.mode === "original"
+                  ? "The speaker's audio as is, for listeners of the source language. No engine cost."
+                  : "Speech translated into the language above."}
+              </span>
+            </div>
+          </div>
+          {p.mode === "translate" ? (
+            <Check
+              checked={p.captureSource}
+              onChange={p.setCaptureSource}
+              label="Show the speaker's original words"
+              hint="Adds a source transcript; raises the engine cost by about 50 %"
+            />
+          ) : null}
+          <Field label="Listener base URL" hint="Reachable from phones, not localhost. Used for the QR code.">
+            <input
+              type="text"
+              value={p.listenerBaseUrl}
+              onChange={(e) => p.setListenerBaseUrl(e.target.value.trim().replace(/\/+$/, ""))}
+              placeholder="http://192.168.1.50:3000"
+              className={`${inputClass} font-mono text-sm`}
+            />
+          </Field>
+        </div>
+
+        <div className="flex flex-col gap-4 rounded-md border border-line bg-panel p-5">
+          <h2 className="font-cond text-xl font-semibold text-ink">Input</h2>
+          <DeviceSelect
+            label="Microphone or line input"
+            value={p.audioDevices.selectedInput}
+            onChange={p.audioDevices.setSelectedInput}
+            defaultLabel={AUDIO_DEFAULTS.inputLabel}
+            devices={p.audioDevices.inputs}
+          />
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" onClick={p.onTest} ariaPressed={p.testing} testId="test-input">
+              {p.testing ? "Stop input test" : "Test input"}
+            </Button>
+            <Button size="sm" tone="ghost" onClick={() => void p.audioDevices.requestPermission()}>
+              {p.audioDevices.hasPermission ? "Refresh devices" : "Detect devices"}
+            </Button>
+          </div>
+          <div>
+            <HMeter level={p.inputLevel} segments={24} label="Input level" testId="setup-meter" />
+            <p className="mt-1.5 text-sm text-silk">
+              {p.testing ? "Input test running; speak into the microphone." : "Level appears during the input test."}
+            </p>
+          </div>
+          <Check
+            checked={p.rawAudio}
+            onChange={p.setRawAudio}
+            label="Raw audio"
+            hint="Turns off browser echo cancellation, noise suppression and gain control. For clean line-level feeds."
+          />
+          {p.primary ? (
+            <Button
+              tone="primary"
+              size="lg"
+              onClick={p.primary.onClick}
+              disabled={p.primary.disabled}
+              className="mt-auto"
+              testId="setup-primary"
+            >
+              {p.primary.label}
+            </Button>
+          ) : null}
+          <p className="text-sm text-silk">
+            {LIVEKIT_ENABLED
+              ? "Open room publishes the QR code; listeners wait there until translation starts. Billing starts with translation."
+              : "No room server configured: translation plays on this machine only."}
+          </p>
+        </div>
       </div>
+    </section>
+  );
+}
+
+function AlertBox({ alert }: { alert: AlertModel }) {
+  const fault = alert.severity === "fault";
+  return (
+    <div
+      role="alert"
+      data-testid="alert-slot"
+      data-state={alert.severity}
+      className={`flex flex-wrap items-center gap-4 rounded-md border px-5 py-4 ${
+        fault ? "border-error-ink bg-error-wash" : "border-amber bg-amber"
+      }`}
+    >
+      <div className="min-w-0 flex-1">
+        <p className={`text-lg font-bold ${fault ? "text-error-ink" : "text-on-amber"}`}>{alert.title}</p>
+        <p className={`mt-1 text-[15px] ${fault ? "text-ink" : "text-on-amber"}`}>{alert.body}</p>
+        {alert.detail ? <p className="mt-1 break-words font-mono text-[13px] text-silk">Detail: {alert.detail}</p> : null}
+      </div>
+      {alert.actions ? <div className="flex flex-wrap gap-2">{alert.actions}</div> : null}
     </div>
   );
 }
