@@ -59,16 +59,32 @@ function cleanNumber(v: string | undefined): number | null {
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
+/** `lt_state` -> `ltState`: the server SDK returns attribute keys in this
+ *  form (protobuf JSON naming), while browsers see them as set. */
+function camel(key: string): string {
+  return key.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
+}
+
+/** The value of an attribute under either key spelling. */
+export function attr(
+  attrs: Readonly<Record<string, string>>,
+  key: string,
+): string | undefined {
+  return attrs[key] ?? attrs[camel(key)];
+}
+
 /** Parse attributes defensively. Unknown or malformed values become null. */
 export function parseOperatorStatus(
   attrs: Readonly<Record<string, string>> | undefined | null,
 ): OperatorStatus {
-  const a = attrs ?? {};
+  const raw = attrs ?? {};
+  const a: Record<string, string | undefined> = {};
+  for (const key of Object.values(STATUS_ATTR)) a[key] = attr(raw, key);
   const state = a[STATUS_ATTR.state];
   const mode = a[STATUS_ATTR.mode];
   const lang = cleanText(a[STATUS_ATTR.lang], 12);
   return {
-    state: (BROADCAST_STATES as readonly string[]).includes(state)
+    state: (BROADCAST_STATES as readonly (string | undefined)[]).includes(state)
       ? (state as OperatorBroadcastState)
       : null,
     title: cleanText(a[STATUS_ATTR.title], MAX_TITLE_LENGTH),

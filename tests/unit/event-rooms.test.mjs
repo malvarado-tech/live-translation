@@ -92,3 +92,11 @@ test("summarizeRoom counts listeners and reads the operator status", () => {
   );
   assert.deepEqual(summarizeRoom([]), { listeners: 0, attributes: null });
 });
+
+test("summarizeRoom accepts the server SDK's camel-case attribute keys", () => {
+  const attrs = { ltState: "waiting" };
+  assert.deepEqual(summarizeRoom([{ canPublish: true, attributes: attrs }]), {
+    listeners: 0,
+    attributes: attrs,
+  });
+});

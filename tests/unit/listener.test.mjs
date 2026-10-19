@@ -132,3 +132,10 @@ test("room names map back to event and language", () => {
   assert.equal(languageOfRoomName("demo-xx"), null);
   assert.equal(eventOfRoomName("es"), null);
 });
+
+test("attributes read back from the server SDK use camel-case keys", () => {
+  const st = parseOperatorStatus({ ltState: "paused", ltTitle: "Talk", ltLang: "es", ltMode: "original" });
+  assert.equal(st.state, "paused");
+  assert.equal(st.title, "Talk");
+  assert.equal(st.mode, "original");
+});

@@ -110,7 +110,9 @@ export function summarizeRoom(
       listeners++;
       continue;
     }
-    if (!attributes && p.attributes && typeof p.attributes.lt_state === "string") {
+    // The server SDK spells attribute keys in camel case (ltState).
+    const state = p.attributes?.lt_state ?? p.attributes?.ltState;
+    if (!attributes && p.attributes && typeof state === "string") {
       attributes = p.attributes;
     }
   }
