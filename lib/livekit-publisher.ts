@@ -198,21 +198,53 @@ export async function startPublisher(
     }
   }
 
-  let lastStatusJson = "";
-  async function setStatus(attributes: Record<string, string>) {
-    const json = JSON.stringify(attributes);
-    if (json === lastStatusJson) return;
-    lastStatusJson = json;
-    try {
-      await lkRoom.localParticipant.setAttributes(attributes);
-    } catch (err) {
-      lastStatusJson = "";
-      console.warn("[livekit-publisher] status update failed", err);
+  // Status updates are serialised: only the latest wanted value is sent,
+  // one request at a time, and a failed send is retried. Overlapping
+  // setAttributes calls can be rejected, which used to leave listeners on a
+  // stale state.
+  let sentJson = "";
+  let wanted: Record<string, string> | null = null;
+  let sending: Promise<void> | null = null;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+  async function flushStatus(): Promise<void> {
+    while (wanted && !stopping) {
+      const next = wanted;
+      const json = JSON.stringify(next);
+      wanted = null;
+      if (json === sentJson) continue;
+      try {
+        await lkRoom.localParticipant.setAttributes(next);
+        sentJson = json;
+      } catch (err) {
+        console.warn("[livekit-publisher] status update failed, retrying", err);
+        if (!wanted) wanted = next;
+        if (!retryTimer) {
+          retryTimer = setTimeout(() => {
+            retryTimer = null;
+            void setStatus(wanted ?? next);
+          }, 1000);
+        }
+        return;
+      }
     }
   }
 
+  function setStatus(attributes: Record<string, string>): Promise<void> {
+    wanted = attributes;
+    if (!sending) {
+      sending = flushStatus().finally(() => {
+        sending = null;
+      });
+    }
+    return sending;
+  }
+
   async function stop() {
+    // Let a pending status (for example "ended") reach listeners first.
+    if (sending) await sending.catch(() => {});
     stopping = true;
+    if (retryTimer) clearTimeout(retryTimer);
     try {
       await unpublishTrack();
       await lkRoom.disconnect();

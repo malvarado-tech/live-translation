@@ -8,14 +8,22 @@ import { createRateLimiter } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
-// The event page polls every 15 s; 30 requests a minute per client leaves
-// room for manual refreshes and several tabs behind one address.
+// The event page and the listener page poll every 15 s and each operator
+// tab every 5 s; 30 requests a minute per client leaves room for manual
+// refreshes and several tabs behind one address.
 const perClient = createRateLimiter({ limit: 30, windowMs: 60_000 });
 
-function clientKey(request: Request): string {
+// Without a proxy in front (the usual LAN setup) there is no client address
+// in the headers, and every phone would share one 30-a-minute bucket. Those
+// requests share a larger budget instead; the per-event cache and the
+// upstream budget in lib/event-languages-server.ts still cap LiveKit calls.
+const SHARED_KEY = "direct";
+const shared = createRateLimiter({ limit: 1_200, windowMs: 60_000, maxKeys: 1 });
+
+function clientKey(request: Request): string | null {
   const forwarded = request.headers.get("x-forwarded-for");
   if (forwarded) return forwarded.split(",")[0].trim();
-  return request.headers.get("x-real-ip") ?? "unknown";
+  return request.headers.get("x-real-ip");
 }
 
 export async function GET(request: Request) {
@@ -28,7 +36,9 @@ export async function GET(request: Request) {
     );
   }
 
-  if (!perClient.hit(clientKey(request))) {
+  const key = clientKey(request);
+  const allowed = key ? perClient.hit(key) : shared.hit(SHARED_KEY);
+  if (!allowed) {
     return NextResponse.json(
       { error: "Too many requests. Try again in a minute." },
       { status: 429, headers: { "Retry-After": "60" } },
