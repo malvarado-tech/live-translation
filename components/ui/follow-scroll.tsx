@@ -21,6 +21,16 @@ export function useFollowScroll(onMeasure?: (content: HTMLElement) => void) {
   // anyone having scrolled.
   const lastTopRef = useRef(0);
   const measureRef = useRef(onMeasure);
+  /**
+   * The box sits above where it was last put and away from the bottom:
+   * someone scrolled up. (Fewer lines clamp it to the bottom instead.)
+   */
+  const movedUp = useCallback(
+    (box: HTMLElement) =>
+      box.scrollTop < lastTopRef.current - 1 &&
+      box.scrollHeight - box.scrollTop - box.clientHeight > AT_BOTTOM_PX,
+    [],
+  );
   const [following, setFollowing] = useState(true);
   const [overflow, setOverflow] = useState(false);
 
@@ -46,7 +56,7 @@ export function useFollowScroll(onMeasure?: (content: HTMLElement) => void) {
     const measure = () => {
       measureRef.current?.(content);
       setOverflow(el.scrollHeight > el.clientHeight + 1);
-      if (followRef.current) toBottom();
+      if (followRef.current && !movedUp(el)) toBottom();
     };
     const onScroll = () => {
       const top = el.scrollTop;
@@ -65,16 +75,16 @@ export function useFollowScroll(onMeasure?: (content: HTMLElement) => void) {
       ro?.disconnect();
       el.removeEventListener("scroll", onScroll);
     };
-  }, []);
+  }, [movedUp]);
 
   // After every render (new lines), keep the newest line in view before
   // paint; the observer above covers size changes that are not renders.
   useLayoutEffect(() => {
     const el = scrollRef.current;
-    if (el && followRef.current) {
-      el.scrollTop = el.scrollHeight;
-      lastTopRef.current = el.scrollTop;
-    }
+    // A scroll up whose event has not run yet: leave it, the event stops following.
+    if (!el || !followRef.current || movedUp(el)) return;
+    el.scrollTop = el.scrollHeight;
+    lastTopRef.current = el.scrollTop;
   });
 
   const resume = useCallback(() => {
