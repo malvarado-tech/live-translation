@@ -1,8 +1,24 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type APIRequestContext, type Page, type TestInfo } from "@playwright/test";
 
 const EM_DASH = String.fromCharCode(0x2014);
 
 export type Theme = "light" | "night";
+
+/**
+ * A client address of its own for one test, so the per-client rate limit
+ * of /api/event-languages (30 a minute) is not shared by the whole suite.
+ */
+export function clientAddress(info: TestInfo): string {
+  return `198.51.100.${(info.workerIndex % 200) + 1}-${info.project.name}-${info.testId}-${info.repeatEachIndex}-${info.retry}`;
+}
+
+/** Whether this build has a room server configured. */
+export async function roomServerConfigured(request: APIRequestContext, info: TestInfo): Promise<boolean> {
+  const resp = await request.get("/api/event-languages?event=demo", {
+    headers: { "x-forwarded-for": clientAddress(info) },
+  });
+  return Boolean((await resp.json()).configured);
+}
 
 /** Set remembered preferences before the page loads. */
 export async function setPrefs(page: Page, prefs: Record<string, string>) {

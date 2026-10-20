@@ -1,5 +1,13 @@
 import { expect, test } from "@playwright/test";
-import { expectContrast, expectNoEmDash, expectNoHorizontalScroll, setPrefs, smallTargets } from "./helpers";
+import {
+  clientAddress,
+  expectContrast,
+  expectNoEmDash,
+  expectNoHorizontalScroll,
+  roomServerConfigured,
+  setPrefs,
+  smallTargets,
+} from "./helpers";
 
 const LIVE = {
   event: "demo",
@@ -13,9 +21,9 @@ const LIVE = {
 };
 
 test.describe("QR page", () => {
-  test("without keys: the code, the short URL and a clear empty state", async ({ page, request }) => {
-    const cfg = await (await request.get("/api/event-languages?event=demo")).json();
-    test.skip(cfg.configured, "a room server is configured in this build");
+  test("without keys: the code, the short URL and a clear empty state", async ({ page, request }, info) => {
+    test.skip(await roomServerConfigured(request, info), "a room server is configured in this build");
+    await page.setExtraHTTPHeaders({ "x-forwarded-for": clientAddress(info) });
     await page.goto("/e/demo/qr");
     await expect(page.getByTestId("qr-code").locator("svg")).toBeVisible();
     await expect(page.getByTestId("qr-url")).toHaveText(/^127\.0\.0\.1:\d+\/e\/demo$/);

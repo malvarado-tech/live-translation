@@ -6,7 +6,7 @@
  * up it stays where it is and a "back to latest" button appears. The
  * button, or scrolling back to the bottom, resumes following.
  */
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { buttonClass } from "@/components/ui/controls";
 
 /** Distance from the bottom, in px, that still counts as "at the latest line". */
@@ -16,6 +16,10 @@ export function useFollowScroll(onMeasure?: (content: HTMLElement) => void) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const followRef = useRef(true);
+  // Last known position. Only a move up stops following: a scroll event
+  // that lands after more lines arrived reads "not at the bottom" without
+  // anyone having scrolled.
+  const lastTopRef = useRef(0);
   const measureRef = useRef(onMeasure);
   const [following, setFollowing] = useState(true);
   const [overflow, setOverflow] = useState(false);
@@ -28,10 +32,7 @@ export function useFollowScroll(onMeasure?: (content: HTMLElement) => void) {
     const el = scrollRef.current;
     const content = contentRef.current;
     if (!el || !content) return;
-    // Last known position. Only a move up stops following: a scroll event
-    // that lands after more lines arrived reads "not at the bottom" without
-    // anyone having scrolled.
-    let lastTop = el.scrollTop;
+    lastTopRef.current = el.scrollTop;
     const setFollow = (v: boolean) => {
       if (v !== followRef.current) {
         followRef.current = v;
@@ -40,7 +41,7 @@ export function useFollowScroll(onMeasure?: (content: HTMLElement) => void) {
     };
     const toBottom = () => {
       el.scrollTop = el.scrollHeight;
-      lastTop = el.scrollTop;
+      lastTopRef.current = el.scrollTop;
     };
     const measure = () => {
       measureRef.current?.(content);
@@ -51,9 +52,9 @@ export function useFollowScroll(onMeasure?: (content: HTMLElement) => void) {
       const top = el.scrollTop;
       const atBottom = el.scrollHeight - top - el.clientHeight <= AT_BOTTOM_PX;
       if (atBottom) setFollow(true);
-      else if (top < lastTop - 1) setFollow(false);
+      else if (top < lastTopRef.current - 1) setFollow(false);
       else if (followRef.current) toBottom();
-      lastTop = el.scrollTop;
+      lastTopRef.current = el.scrollTop;
     };
     const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
     ro?.observe(el);
@@ -66,11 +67,24 @@ export function useFollowScroll(onMeasure?: (content: HTMLElement) => void) {
     };
   }, []);
 
+  // After every render (new lines), keep the newest line in view before
+  // paint; the observer above covers size changes that are not renders.
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (el && followRef.current) {
+      el.scrollTop = el.scrollHeight;
+      lastTopRef.current = el.scrollTop;
+    }
+  });
+
   const resume = useCallback(() => {
     followRef.current = true;
     setFollowing(true);
     const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (el) {
+      el.scrollTop = el.scrollHeight;
+      lastTopRef.current = el.scrollTop;
+    }
     // Keyboard users land back on the history, not on a removed button.
     el?.focus({ preventScroll: true });
   }, []);

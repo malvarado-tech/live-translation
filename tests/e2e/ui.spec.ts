@@ -3,6 +3,7 @@ import {
   expectContrast,
   expectNoEmDash,
   expectNoHorizontalScroll,
+  roomServerConfigured,
   setPrefs,
   smallTargets,
   type Theme,
@@ -279,9 +280,8 @@ test.describe("operator without keys", () => {
 test.describe("operator audio section", () => {
   for (const view of ["desk", "rows"]) {
     for (const theme of THEMES) {
-      test(`${view} view, ${theme} theme: input, output, level, monitor and refresh stay on the live screen`, async ({ page, request }) => {
-        const cfg = await (await request.get("/api/event-languages?event=demo")).json();
-        test.skip(cfg.configured, "a room server is configured in this build");
+      test(`${view} view, ${theme} theme: input, output, level, monitor and refresh stay on the live screen`, async ({ page, request }, info) => {
+        test.skip(await roomServerConfigured(request, info), "a room server is configured in this build");
         await setPrefs(page, { "lt.view.operator": view, "lt.theme": theme });
         await page.goto("/operator?mode=original");
         await page.getByTestId("setup-primary").click();
