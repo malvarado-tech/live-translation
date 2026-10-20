@@ -185,6 +185,21 @@ test.describe("operator replay", () => {
     await expect(play).toHaveAttribute("data-state", "paused");
     await expect(page.getByTestId("tally-es")).toHaveText("Paused");
   });
+
+  test("rows view on a phone keeps No alerts on one line", async ({ page }, info) => {
+    test.skip(info.project.name !== "mobile", "phone layout");
+    await setPrefs(page, { "lt.view.operator": "rows" });
+    await page.goto("/replay/operator");
+    const label = page.getByTestId("alert-slot").getByText("No alerts", { exact: true });
+    await expect(label).toBeVisible();
+    const lines = await label.evaluate((el) => {
+      const r = document.createRange();
+      r.selectNodeContents(el);
+      return new Set([...r.getClientRects()].map((b) => Math.round(b.top))).size;
+    });
+    expect(lines).toBe(1);
+    await expectNoHorizontalScroll(page);
+  });
 });
 
 test.describe("caption history", () => {

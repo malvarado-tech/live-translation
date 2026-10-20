@@ -226,9 +226,9 @@ export function AlertSlot({ alert, okLine }: { alert: AlertModel | null; okLine:
   if (!alert) {
     return (
       <div className="flex min-h-12 items-center gap-3 px-1 text-silk" data-testid="alert-slot" data-state="ok">
-        <span aria-hidden className="h-2.5 w-2.5 rounded-full bg-green" />
-        <span className="font-semibold text-ink">No alerts</span>
-        <span>{okLine}</span>
+        <span aria-hidden className="h-2.5 w-2.5 shrink-0 rounded-full bg-green" />
+        <span className="shrink-0 whitespace-nowrap font-semibold text-ink">No alerts</span>
+        <span className="min-w-0">{okLine}</span>
       </div>
     );
   }
