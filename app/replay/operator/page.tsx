@@ -16,6 +16,7 @@ import {
 import { Transport } from "@/components/replay/transport";
 import { audioUrl, setMediaMuted, setMediaTime, useReplayManifest } from "@/components/replay/use-replay";
 import { Button, Kbd } from "@/components/ui/controls";
+import { BASE_PATH } from "@/lib/base-path";
 import { LISTENER_STRINGS, uiLangForRoom } from "@/lib/listener-strings";
 import { cuesUntil, type ReplayChannel } from "@/lib/replay";
 import { getAudioContext, primeAudio } from "@/lib/use-audio-level";
@@ -228,7 +229,7 @@ export default function OperatorReplayPage() {
           : null,
         qr: base
           ? {
-              url: `${base}/replay`,
+              url: `${base}${BASE_PATH}/replay`,
               caption: "Listener replay on a phone",
             }
           : null,

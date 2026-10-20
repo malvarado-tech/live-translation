@@ -6,9 +6,10 @@
  * channel switch keeps the position and the play state.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { BASE_PATH } from "@/lib/base-path";
 import { pickAudio, replayChannels, type ReplayChannel, type ReplayManifest } from "@/lib/replay";
 
-export const REPLAY_BASE = "/replay";
+export const REPLAY_BASE = `${BASE_PATH}/replay`;
 
 export type ManifestState =
   | { kind: "loading" }
