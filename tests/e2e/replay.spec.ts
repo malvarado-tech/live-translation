@@ -51,12 +51,39 @@ test.describe("listener replay", () => {
     expect(before).toBeGreaterThanOrEqual(124);
 
     // Switch to Portuguese: same position, still playing, Portuguese captions.
+    // Every value the clock shows during the switch is recorded: while the
+    // new source loads the element reports 0, and the clock must not.
+    await page.evaluate(() => {
+      const clock = document.querySelector("[data-testid=replay-time]")!;
+      const seen: string[] = [];
+      (window as unknown as { clockSeen: string[] }).clockSeen = seen;
+      new MutationObserver(() => seen.push(clock.textContent ?? "")).observe(clock, {
+        subtree: true,
+        childList: true,
+        characterData: true,
+      });
+    });
     await page.getByTestId("language-button").click();
     await page.getByTestId("channel-pt").click();
+    // Wait for the Portuguese audio itself to be loaded and playing, not only
+    // for the captions, which switch on the next render.
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const a = document.querySelector("audio")!;
+            return /tts_pt\./.test(a.currentSrc) && !a.paused && a.readyState >= 2 && a.currentTime >= 120;
+          }),
+        { timeout: 8000 },
+      )
+      .toBe(true);
     await expect(page.getByTestId("caption-tail")).toContainText(/Lua/, { timeout: 5000 });
     await expect(page.getByTestId("replay-play")).toHaveAttribute("data-state", "playing", { timeout: 5000 });
     const after = await time(page);
     expect(Math.abs(after - before)).toBeLessThanOrEqual(3);
+    const seen = await page.evaluate(() => (window as unknown as { clockSeen: string[] }).clockSeen);
+    const toSeconds = (v: string) => v.split(":").map(Number).reduce((m, s) => m * 60 + s);
+    expect(seen.filter((v) => toSeconds(v) < before - 3)).toEqual([]);
 
     // Original English.
     await page.getByTestId("language-button").click();

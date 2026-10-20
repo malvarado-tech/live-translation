@@ -4,6 +4,11 @@
  * Replay clock and manifest loading. The selected channel's <audio> element
  * is the clock: captions and position are read from its currentTime, and a
  * channel switch keeps the position and the play state.
+ *
+ * While a new source loads, the element reports currentTime 0 (from
+ * `emptied` until `loadedmetadata` restores the position). During that window
+ * the clock holds the resume position instead, so the time, the scrubber and
+ * the captions never jump back to the start on a channel switch.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { BASE_PATH } from "@/lib/base-path";
@@ -92,25 +97,37 @@ export function useReplayPlayer(src: string | null, fallbackDuration: number): R
   const [loading, setLoading] = useState(true);
   const [blocked, setBlocked] = useState(false);
   const resumeRef = useRef<{ at: number; play: boolean }>({ at: 0, play: false });
+  /** Position to report while a source is loading; null once it has loaded. */
+  const pendingRef = useRef<number | null>(null);
 
   // Load a new source, keeping position and play state across switches.
   useEffect(() => {
     const el = element;
     if (!el || !src) return;
-    const { at, play } = resumeRef.current;
+    const { play } = resumeRef.current;
     const onMeta = () => {
+      const at = pendingRef.current ?? resumeRef.current.at;
       try {
         setMediaTime(el, Math.min(at, Number.isFinite(el.duration) ? el.duration : at));
       } catch {
         // ignore
       }
+      pendingRef.current = null;
       if (Number.isFinite(el.duration)) setDuration(el.duration);
       setLoading(false);
       if (play) el.play().catch(() => setBlocked(true));
     };
+    const onError = () => {
+      pendingRef.current = null;
+    };
     el.addEventListener("loadedmetadata", onMeta, { once: true });
+    el.addEventListener("error", onError, { once: true });
+    pendingRef.current = resumeRef.current.at;
     loadSource(el, src);
-    return () => el.removeEventListener("loadedmetadata", onMeta);
+    return () => {
+      el.removeEventListener("loadedmetadata", onMeta);
+      el.removeEventListener("error", onError);
+    };
   }, [element, src]);
 
   // Element events and the clock.
@@ -119,10 +136,11 @@ export function useReplayPlayer(src: string | null, fallbackDuration: number): R
     if (!el) return;
     let raf = 0;
     let last = 0;
+    const clock = () => pendingRef.current ?? el.currentTime;
     const tick = (now: number) => {
       if (now - last > 90) {
         last = now;
-        setT(el.currentTime);
+        setT(clock());
       }
       raf = requestAnimationFrame(tick);
     };
@@ -137,7 +155,7 @@ export function useReplayPlayer(src: string | null, fallbackDuration: number): R
     const onPause = () => {
       setPlaying(false);
       cancelAnimationFrame(raf);
-      setT(el.currentTime);
+      setT(clock());
     };
     const onEnded = () => {
       setEnded(true);
@@ -146,7 +164,7 @@ export function useReplayPlayer(src: string | null, fallbackDuration: number): R
     };
     const onWaiting = () => setLoading(true);
     const onCanPlay = () => setLoading(false);
-    const onSeeked = () => setT(el.currentTime);
+    const onSeeked = () => setT(clock());
     el.addEventListener("play", onPlay);
     el.addEventListener("pause", onPause);
     el.addEventListener("ended", onEnded);
@@ -167,7 +185,9 @@ export function useReplayPlayer(src: string | null, fallbackDuration: number): R
   // Before a source switch, remember where we are.
   useEffect(() => {
     return () => {
-      if (element) resumeRef.current = { at: element.currentTime, play: !element.paused };
+      if (element) {
+        resumeRef.current = { at: pendingRef.current ?? element.currentTime, play: !element.paused };
+      }
     };
   }, [element, src]);
 
@@ -183,6 +203,13 @@ export function useReplayPlayer(src: string | null, fallbackDuration: number): R
   const seek = useCallback(
     (s: number) => {
       if (!element) return;
+      if (pendingRef.current !== null) {
+        // Still loading: the position is applied once the metadata arrives.
+        pendingRef.current = Math.max(0, s);
+        setT(pendingRef.current);
+        setEnded(false);
+        return;
+      }
       setMediaTime(element, Math.max(0, s));
       setT(element.currentTime);
       setEnded(false);
