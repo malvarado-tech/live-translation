@@ -276,6 +276,57 @@ test.describe("operator without keys", () => {
   });
 });
 
+test.describe("operator audio section", () => {
+  for (const view of ["desk", "rows"]) {
+    for (const theme of THEMES) {
+      test(`${view} view, ${theme} theme: input, output, level, monitor and refresh stay on the live screen`, async ({ page, request }) => {
+        const cfg = await (await request.get("/api/event-languages?event=demo")).json();
+        test.skip(cfg.configured, "a room server is configured in this build");
+        await setPrefs(page, { "lt.view.operator": view, "lt.theme": theme });
+        await page.goto("/operator?mode=original");
+        await page.getByTestId("setup-primary").click();
+        await expect(page.getByTestId("session-tally")).toHaveText("On air");
+        await expect(page.getByTestId(`${view}-view`)).toBeVisible();
+
+        const audio = page.getByTestId("audio-section");
+        await expect(audio).toBeVisible();
+        // Not behind a toggle or a collapsed panel.
+        expect(await audio.evaluate((el) => el.closest("details") === null)).toBe(true);
+        await expect(page.getByRole("button", { name: "Change input" })).toHaveCount(0);
+
+        await expect(audio.getByTestId("audio-input")).toBeEnabled();
+        await expect(audio.getByTestId("audio-input").locator("option").first()).toHaveText("System default microphone");
+        const output = audio.getByTestId("audio-output");
+        await expect(output).toBeVisible();
+        const sinkSupported = await page.evaluate(() => "setSinkId" in HTMLMediaElement.prototype);
+        if (sinkSupported) await expect(output).toBeEnabled();
+        else await expect(audio).toContainText("not supported in this browser");
+        await expect
+          .poll(async () => Number(await audio.getByTestId("audio-meter").getAttribute("data-level")), { timeout: 5000 })
+          .toBeGreaterThan(0.01);
+
+        const monitor = audio.getByTestId("audio-monitor");
+        await expect(monitor.getByRole("radio", { name: "Program" })).toHaveAttribute("aria-checked", "true");
+        await monitor.getByRole("radio", { name: "Mute" }).click();
+        await expect(monitor.getByRole("radio", { name: "Mute" })).toHaveAttribute("aria-checked", "true");
+        await expect(page.getByTestId("monitor-local")).toHaveAttribute("aria-pressed", "false");
+        await monitor.getByRole("radio", { name: "Input" }).click();
+        await expect(monitor.getByRole("radio", { name: "Input" })).toHaveAttribute("aria-checked", "true");
+        await expect(audio.getByTestId("audio-refresh")).toBeEnabled();
+        await audio.getByTestId("audio-refresh").click();
+        await expect(audio.getByTestId("audio-refresh")).toHaveText("Refresh devices");
+
+        // Room controls in the bar; without a room server, Stop ends the local session.
+        await expect(page.getByTestId("primary-action")).toBeVisible();
+        await page.waitForTimeout(300);
+        await expectContrast(page);
+        await expectNoEmDash(page);
+        await expectNoHorizontalScroll(page);
+      });
+    }
+  }
+});
+
 test.describe("listener without keys", () => {
   test("an unavailable server reads as a plain sentence", async ({ page, request }) => {
     const cfg = await (await request.get("/api/event-languages?event=demo")).json();

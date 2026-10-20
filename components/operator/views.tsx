@@ -7,9 +7,12 @@
  *    listeners, on-air time) with transcript lanes below.
  *  - Rows: horizontal channel rows, one alert slot with its fix, and the
  *    monitored transcript at reading size.
+ * Both views keep the Audio section (devices, input level, monitor) on
+ * screen.
  */
 import { QRCodeSVG } from "qrcode.react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { AudioSection, type AudioModel } from "@/components/operator/audio-section";
 import {
   Button,
   buttonClass,
@@ -63,6 +66,8 @@ export type QrModel = {
   url: string;
   caption: string;
   roomUrl?: string | null;
+  /** Full-screen QR page for a projector, opened in a new tab. */
+  pageUrl?: string | null;
   actions?: ReactNode;
 };
 
@@ -78,6 +83,7 @@ export type OperatorModel = {
   target: TranscriptModel | null;
   qr: QrModel | null;
   listenersSee: ListenerPreview[];
+  audio: AudioModel | null;
   addLanguage?: ReactNode;
   log: Array<{ at: string; text: string }>;
 };
@@ -95,7 +101,7 @@ export type SessionBarProps = {
 
 export function SessionBar({ tally, clock, title, subtitle, figures, actions }: SessionBarProps) {
   return (
-    <header className="border-b border-line bg-panel" data-testid="session-bar">
+    <header className="z-30 border-b border-line bg-panel lg:sticky lg:top-0" data-testid="session-bar">
       <div className="mx-auto flex max-w-[1600px] flex-wrap items-center gap-x-6 gap-y-3 px-4 py-3">
         <div className="flex items-center gap-4">
           <Tally tone={tally.tone} className="h-9 text-lg" testId="session-tally">
@@ -343,6 +349,17 @@ export function QrCard({ qr, compact = false }: { qr: QrModel; compact?: boolean
           <Button size="sm" onClick={() => setProjector(true)}>
             Projector view
           </Button>
+          {qr.pageUrl ? (
+            <a
+              href={qr.pageUrl}
+              target="_blank"
+              rel="noopener"
+              className={buttonClass("default", "sm")}
+              data-testid="open-qr-page"
+            >
+              Open QR page
+            </a>
+          ) : null}
           {qr.actions}
         </div>
       </div>
@@ -541,6 +558,7 @@ export function DeskView({ model }: { model: OperatorModel }) {
         {model.qr ? <QrCard qr={model.qr} /> : null}
       </div>
       <SourceNote channels={model.channels} />
+      {model.audio ? <AudioSection audio={model.audio} wide /> : null}
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         {model.source ? <TranscriptLane model={model.source} testId="lane-source" /> : null}
         {model.target ? <TranscriptLane model={model.target} testId="lane-target" /> : null}
@@ -566,6 +584,7 @@ export function RowsView({ model }: { model: OperatorModel }) {
           ) : null}
         </div>
         <SourceNote channels={model.channels} />
+        {model.audio ? <AudioSection audio={model.audio} /> : null}
         <ListenersSee items={model.listenersSee} />
         {model.qr ? <QrCard qr={model.qr} compact /> : null}
       </div>

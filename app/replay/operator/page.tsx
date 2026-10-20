@@ -239,6 +239,7 @@ export default function OperatorReplayPage() {
           tone: playing ? "ok" : "dim",
           lang: uiLangForRoom(c.code),
         })),
+        audio: null,
         log: [],
       }
     : null;

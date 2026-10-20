@@ -109,6 +109,7 @@ export function Button({
   ariaLabel,
   ariaPressed,
   ariaKeyShortcuts,
+  describedBy,
   testId,
 }: {
   children: ReactNode;
@@ -121,6 +122,7 @@ export function Button({
   ariaLabel?: string;
   ariaPressed?: boolean;
   ariaKeyShortcuts?: string;
+  describedBy?: string;
   testId?: string;
 }) {
   return (
@@ -132,6 +134,7 @@ export function Button({
       aria-label={ariaLabel}
       aria-pressed={ariaPressed}
       aria-keyshortcuts={ariaKeyShortcuts}
+      aria-describedby={describedBy}
       data-testid={testId}
       className={`${buttonClass(tone, size)} ${className}`}
     >

@@ -19,6 +19,7 @@ import {
   type OperatorModel,
   type StripModel,
 } from "@/components/operator/views";
+import { AUDIO_INPUT_ID, DeviceSelect, type AudioModel } from "@/components/operator/audio-section";
 import { TelemetryPanel } from "@/components/telemetry-panel";
 import { Button, buttonClass, HMeter, Segmented, type TallyTone } from "@/components/ui/controls";
 import {
@@ -88,6 +89,13 @@ function clockOf(ms: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 }
 
+/** Moves focus to the input select of the Audio section. */
+function focusInputSelect() {
+  const el = document.getElementById(AUDIO_INPUT_ID);
+  el?.scrollIntoView({ block: "center" });
+  el?.focus();
+}
+
 function secs(ms: number | null | undefined): string | null {
   return ms == null ? null : `${(ms / 1000).toFixed(1)} s`;
 }
@@ -151,7 +159,8 @@ export default function OperatorPage({
   const [log, setLog] = useState<LogEntry[]>([]);
   const [now, setNow] = useState(() => Date.now());
   const [confirmEnd, setConfirmEnd] = useState(false);
-  const [showInputPicker, setShowInputPicker] = useState(false);
+  // The input device the running capture was opened with.
+  const [capturedInput, setCapturedInput] = useState<string | null>(null);
   const [copied, setCopied] = useState<"event" | "room" | null>(null);
   const [addLang, setAddLang] = useState("");
 
@@ -476,6 +485,7 @@ export default function OperatorPage({
     }
     micRef.current = mic;
     setMicStream(mic);
+    setCapturedInput(audioDevices.selectedInput);
     if (sourceAudioRef.current) {
       sourceAudioRef.current.srcObject = mic;
       sourceAudioRef.current.play().catch(() => {});
@@ -734,7 +744,7 @@ export default function OperatorPage({
         title: `No input signal for ${Math.round(inputLevel.silentMs / 1000)} s`,
         body: "Check the speaker's microphone and cable, or change the input.",
         actions: (
-          <Button tone="warn" onClick={() => setShowInputPicker(true)}>
+          <Button tone="warn" onClick={focusInputSelect}>
             Change input
           </Button>
         ),
@@ -810,9 +820,6 @@ export default function OperatorPage({
     fault: inputActive && live && inputLevel.silentMs > INPUT_SILENCE_ALERT_MS,
     actions: (
       <>
-        <Button size="sm" onClick={() => setShowInputPicker((v) => !v)} ariaPressed={showInputPicker}>
-          Change input
-        </Button>
         <Button
           size="sm"
           tone={monitor === "source" ? "live" : "ghost"}
@@ -937,6 +944,41 @@ export default function OperatorPage({
     eventTitle.trim() ? `&title=${encodeURIComponent(eventTitle.trim())}` : ""
   }`;
 
+  const audio: AudioModel = {
+    input: {
+      value: audioDevices.selectedInput,
+      devices: audioDevices.inputs,
+      defaultLabel: AUDIO_DEFAULTS.inputLabel,
+      onChange: audioDevices.setSelectedInput,
+    },
+    output: {
+      value: audioDevices.selectedOutput,
+      devices: audioDevices.outputs,
+      defaultLabel: AUDIO_DEFAULTS.outputLabel,
+      onChange: audioDevices.setSelectedOutput,
+      supported: audioDevices.outputSupported,
+    },
+    level: inputActive ? inputLevel.level : null,
+    levelText: inputStrip.meta,
+    inputHint:
+      micStream && capturedInput !== null && audioDevices.selectedInput !== capturedInput
+        ? "the new input applies at the next Start"
+        : null,
+    monitor: {
+      value: monitor,
+      onChange: (v) => setMonitor(v as Monitor),
+      options: [
+        { value: "program", label: mode === "original" ? "Program" : "Translation" },
+        { value: "source", label: "Input" },
+        { value: "mute", label: "Mute" },
+      ],
+    },
+    refresh: {
+      label: audioDevices.hasPermission ? "Refresh devices" : "Detect devices",
+      onClick: () => void audioDevices.requestPermission(),
+    },
+  };
+
   const sourceLines = captionLines(source);
   const targetLines = captionLines(target);
 
@@ -989,6 +1031,7 @@ export default function OperatorPage({
           }
         : null,
     listenersSee,
+    audio,
     addLanguage:
       LIVEKIT_ENABLED && session.hasRoom && addable.length > 0 ? (
         <div className="flex flex-wrap items-center gap-2">
@@ -1103,53 +1146,14 @@ export default function OperatorPage({
           />
         ) : null}
 
-        {showInputPicker ? (
-          <section className="flex flex-wrap items-end gap-3 rounded-md border border-line bg-panel p-4" aria-label="Change input">
-            <DeviceSelect
-              label="Input"
-              value={audioDevices.selectedInput}
-              onChange={audioDevices.setSelectedInput}
-              defaultLabel={AUDIO_DEFAULTS.inputLabel}
-              devices={audioDevices.inputs}
-            />
-            <Button size="sm" onClick={() => void audioDevices.requestPermission()}>
-              {audioDevices.hasPermission ? "Refresh devices" : "Detect devices"}
-            </Button>
-            <p className="text-sm text-silk">
-              {micStream ? "A new input applies at the next Start." : "Applies when translation starts."}
-            </p>
-            <Button size="sm" tone="ghost" onClick={() => setShowInputPicker(false)} className="ml-auto">
-              Close
-            </Button>
-          </section>
-        ) : null}
-
         {!view.canConfigure ? <OperatorBody model={model} /> : null}
 
         <details className="rounded-md border border-line bg-panel">
           <summary className="flex min-h-12 cursor-pointer items-center px-4 font-semibold text-ink">
-            Session details and audio routing
+            Session details and tab audio
           </summary>
           <div className="flex flex-col gap-4 border-t border-line p-4">
             <div className="flex flex-wrap items-end gap-4">
-              <DeviceSelect
-                label={`Monitor output${audioDevices.outputSupported ? "" : " (not supported in this browser)"}`}
-                value={audioDevices.selectedOutput}
-                onChange={audioDevices.setSelectedOutput}
-                defaultLabel={AUDIO_DEFAULTS.outputLabel}
-                devices={audioDevices.outputs}
-                disabled={!audioDevices.outputSupported}
-              />
-              <Segmented
-                label="Monitor"
-                value={monitor}
-                onChange={setMonitor}
-                options={[
-                  { value: "program", label: mode === "original" ? "Program" : "Translation" },
-                  { value: "source", label: "Input" },
-                  { value: "mute", label: "Mute" },
-                ]}
-              />
               <Check
                 checked={broadcastToTab}
                 onChange={setBroadcastToTab}
@@ -1186,41 +1190,6 @@ export default function OperatorPage({
 /* ------------------------------------------------------------------ setup */
 
 type AudioDevicesApi = ReturnType<typeof useAudioDevices>;
-
-function DeviceSelect({
-  label,
-  value,
-  onChange,
-  defaultLabel,
-  devices,
-  disabled,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  defaultLabel: string;
-  devices: AudioDevicesApi["inputs"];
-  disabled?: boolean;
-}) {
-  return (
-    <label className="flex min-w-56 flex-col gap-1.5">
-      <span className="text-sm font-medium text-silk">{label}</span>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        disabled={disabled}
-        className="min-h-11 rounded-md border border-btn-line bg-panel px-3 text-[15px] text-ink disabled:opacity-50"
-      >
-        <option value="">{defaultLabel}</option>
-        {devices.map((d) => (
-          <option key={d.deviceId} value={d.deviceId}>
-            {d.label}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
 
 function Field({
   label,
