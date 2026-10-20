@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { clientAddress } from "./helpers";
 
 const LIVE = {
   event: "demo",
@@ -10,17 +11,21 @@ const LIVE = {
 };
 
 test.describe("event page without LiveKit credentials", () => {
-  test("the API reports no live languages", async ({ request }) => {
-    const resp = await request.get("/api/event-languages?event=demo");
+  test("the API reports no live languages", async ({ request }, info) => {
+    const resp = await request.get("/api/event-languages?event=demo", {
+      headers: { "x-forwarded-for": clientAddress(info) },
+    });
     expect(resp.status()).toBe(200);
     const body = await resp.json();
     test.skip(body.configured, "LiveKit credentials are configured here");
     expect(body).toEqual({ event: "demo", configured: false, languages: [] });
   });
 
-  test("the picker shows a clear empty state", async ({ page, request }) => {
+  test("the picker shows a clear empty state", async ({ page, request }, info) => {
     const body = await (
-      await request.get("/api/event-languages?event=demo")
+      await request.get("/api/event-languages?event=demo", {
+        headers: { "x-forwarded-for": clientAddress(info) },
+      })
     ).json();
     test.skip(body.configured, "LiveKit credentials are configured here");
 

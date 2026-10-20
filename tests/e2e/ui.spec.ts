@@ -236,8 +236,8 @@ test.describe("storage blocked", () => {
 });
 
 test.describe("operator without keys", () => {
-  test("a failed start shows one consistent fault with its fix", async ({ page, request }) => {
-    const cfg = await (await request.get("/api/event-languages?event=demo")).json();
+  test("a failed start shows one consistent fault with its fix", async ({ page, request }, info) => {
+    const cfg = { configured: await roomServerConfigured(request, info) };
     test.skip(cfg.configured, "a room server is configured in this build");
     await page.goto("/operator");
     await page.getByTestId("setup-primary").click();
@@ -262,8 +262,8 @@ test.describe("operator without keys", () => {
       .toBeGreaterThan(0.05);
   });
 
-  test("original audio mode needs no translation key and runs locally", async ({ page, request }) => {
-    const cfg = await (await request.get("/api/event-languages?event=demo")).json();
+  test("original audio mode needs no translation key and runs locally", async ({ page, request }, info) => {
+    const cfg = { configured: await roomServerConfigured(request, info) };
     test.skip(cfg.configured, "a room server is configured in this build");
     await page.goto("/operator?mode=original");
     await page.getByTestId("setup-primary").click();
@@ -328,8 +328,8 @@ test.describe("operator audio section", () => {
 });
 
 test.describe("listener without keys", () => {
-  test("an unavailable server reads as a plain sentence", async ({ page, request }) => {
-    const cfg = await (await request.get("/api/event-languages?event=demo")).json();
+  test("an unavailable server reads as a plain sentence", async ({ page, request }, info) => {
+    const cfg = { configured: await roomServerConfigured(request, info) };
     test.skip(cfg.configured, "a room server is configured in this build");
     await page.goto("/listen/demo-es");
     await page.getByTestId("listen-button").click();
