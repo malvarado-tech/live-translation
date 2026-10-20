@@ -22,14 +22,14 @@ Translation runs on OpenAI's `gpt-realtime-translate` model. The translated audi
 <table>
   <tr>
     <td colspan="3">
-      <img src="docs/screenshots/operator-desk.png" alt="Operator dashboard, Desk view: input strip, four language strips, listener QR code, Audio section with input and output devices, transcript lanes">
-      <p align="center"><sub>Operator, Desk view: the input and each language as a channel strip, the event QR code, the Audio section, the source and translated transcript.</sub></p>
+      <img src="docs/screenshots/operator-desk.png" alt="Operator dashboard, Desk view, in the English original-audio tab: input strip, three language strips, Add language, listener QR code, Audio section with input and output devices, what listeners see">
+      <p align="center"><sub>Operator, Desk view, in the English original-audio tab: the input and each language of the event as a channel strip, the event QR code, the Audio section and what listeners see on each channel.</sub></p>
     </td>
   </tr>
   <tr>
     <td colspan="3">
       <img src="docs/screenshots/operator-rows-night.png" alt="Operator dashboard, Rows view, Night theme">
-      <p align="center"><sub>Operator, Rows view, Night theme: one row per channel, the alert slot, the Audio section and the transcript at reading size.</sub></p>
+      <p align="center"><sub>Operator, Rows view, Night theme: one row per channel, the alert slot and the Audio section. A translation tab shows its transcript at reading size in the right column.</sub></p>
     </td>
   </tr>
   <tr>
