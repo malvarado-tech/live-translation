@@ -203,6 +203,10 @@ export default function OperatorPage({
   const eventUrl = base ? `${base}/e/${eventSlug}` : "";
   const roomUrl = base ? `${base}/listen/${room}` : "";
   const langLabel = languageLabel(targetLanguage);
+  const configuredBase = (process.env.NEXT_PUBLIC_LISTENER_BASE_URL ?? "").replace(/\/+$/, "");
+  const qrPageHref = `/e/${eventSlug}/qr${
+    listenerBaseUrl && listenerBaseUrl !== configuredBase ? `?base=${encodeURIComponent(listenerBaseUrl)}` : ""
+  }`;
 
   /* --------------------------------------------------------------- clock */
   useEffect(() => {
@@ -1018,6 +1022,7 @@ export default function OperatorPage({
         ? {
             url: eventUrl,
             caption: "One code for every language of this event",
+            pageUrl: qrPageHref,
             actions: (
               <>
                 <Button size="sm" onClick={() => void copy("event")}>
@@ -1173,6 +1178,10 @@ export default function OperatorPage({
           Listener pages: <Link className="underline underline-offset-4" href={`/e/${eventSlug}`}>event page</Link>
           {" · "}
           <Link className="underline underline-offset-4" href={`/listen/${room}`}>{targetLanguage.toUpperCase()} only</Link>
+          {" · "}
+          <a className="underline underline-offset-4" href={qrPageHref} target="_blank" rel="noopener" data-testid="qr-page-link">
+            QR page
+          </a>
           {" · "}
           <Link className="underline underline-offset-4" href="/replay/operator">replay demo</Link>
         </p>

@@ -35,6 +35,13 @@ test("operator to listener: live, paused, ended", async ({ browser }, info) => {
   await op.getByTestId("setup-primary").click();
   await expect(op.getByTestId("session-tally")).toHaveText("Room open");
   await expect(op.getByTestId("event-url")).toContainText(`/e/${event}`);
+  // The QR card opens the full-screen QR page in a new tab.
+  const qrButton = op.getByTestId("open-qr-page");
+  await expect(qrButton).toHaveAttribute("target", "_blank");
+  const [qrTab] = await Promise.all([opCtx.waitForEvent("page"), qrButton.click()]);
+  await expect(qrTab.getByTestId("qr-url")).toContainText(`/e/${event}`);
+  await expect(qrTab.getByTestId("qr-title")).toHaveText("E2E talk", { timeout: 20_000 });
+  await qrTab.close();
 
   const lisCtx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, locale: "es-MX" });
   // The level meter lives in the Receiver view.
