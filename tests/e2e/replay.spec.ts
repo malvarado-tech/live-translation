@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { setPrefs } from "./helpers";
+import { expectContrast, setPrefs } from "./helpers";
 
 async function time(page: Page): Promise<number> {
   const [m, s] = (await page.getByTestId("replay-time").first().innerText()).split(":").map(Number);
@@ -139,5 +139,91 @@ test.describe("operator replay", () => {
     await page.getByTestId("settings-button").click();
     await page.getByRole("radio", { name: "Rows" }).click();
     await expect(page.getByTestId("rows-view")).toBeVisible();
+  });
+});
+
+test.describe("caption history", () => {
+  for (const view of ["captions", "receiver"] as const) {
+    test(`${view} view: scroll back through the session, then back to latest`, async ({ page }) => {
+      await setPrefs(page, { "lt.view.listener": view });
+      await page.goto("/replay");
+      const stage = page.getByTestId(view === "captions" ? "caption-stage" : "caption-tail");
+      const scroller = stage.getByTestId("caption-scroll");
+      await page.getByTestId("replay-play").click();
+      await expect(stage).toContainText("Zarpamos", { timeout: 5000 });
+      await page.getByTestId("replay-scrub").fill("140");
+      await expect(stage).toHaveAttribute("data-overflow", "true", { timeout: 5000 });
+      // The first line of the session is still there to read back.
+      await expect(scroller.locator("p").first()).toContainText("Zarpamos");
+      await expect(stage).toHaveAttribute("data-following", "true");
+      const fadeWhileFollowing = await scroller.evaluate((el) => getComputedStyle(el).maskImage);
+      expect(fadeWhileFollowing).toContain("gradient");
+      await expect(page.getByTestId("caption-latest")).toHaveCount(0);
+
+      // Scroll up: following stops and the button appears, announced politely.
+      await scroller.evaluate((el) => el.scrollTo({ top: 0 }));
+      await expect(stage).toHaveAttribute("data-following", "false");
+      const latest = page.getByTestId("caption-latest");
+      await expect(latest).toBeVisible();
+      await expect(latest).toHaveText("Volver a lo más reciente");
+      expect(await latest.evaluate((el) => el.closest("[aria-live=polite]") !== null)).toBe(true);
+      const box = (await latest.boundingBox())!;
+      expect(box.height).toBeGreaterThanOrEqual(44);
+      expect(await scroller.evaluate((el) => getComputedStyle(el).maskImage)).toBe("none");
+
+      // New lines keep arriving; the reading position holds.
+      await page.waitForTimeout(2500);
+      expect(await scroller.evaluate((el) => el.scrollTop)).toBeLessThan(40);
+      await expectContrast(page);
+
+      // The button returns to the newest line and resumes following.
+      await latest.click();
+      await expect(stage).toHaveAttribute("data-following", "true");
+      await expect(page.getByTestId("caption-latest")).toHaveCount(0);
+      const gap = await scroller.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight);
+      expect(gap).toBeLessThanOrEqual(12);
+
+      // Scrolling back to the bottom by hand also resumes following.
+      await scroller.evaluate((el) => el.scrollTo({ top: 0 }));
+      await expect(page.getByTestId("caption-latest")).toBeVisible();
+      await scroller.evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+      await expect(stage).toHaveAttribute("data-following", "true");
+      await expect(page.getByTestId("caption-latest")).toHaveCount(0);
+
+      // The interface language switches the button too.
+      await scroller.evaluate((el) => el.scrollTo({ top: 0 }));
+      await page.getByTestId("options-button").click();
+      await page.getByTestId("ui-lang-switch").getByRole("radio", { name: "English" }).click();
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("caption-latest")).toHaveText("Back to latest");
+    });
+  }
+});
+
+test.describe("operator transcript history", () => {
+  test("the lanes scroll back and return to the newest line", async ({ page }) => {
+    await page.goto("/replay/operator");
+    await page.getByTestId("primary-action").click();
+    const lane = page.getByTestId("lane-target");
+    const scroller = page.getByTestId("lane-target-scroll");
+    await expect(lane).toContainText("Zarpamos", { timeout: 8000 });
+    await page.getByTestId("replay-scrub").first().fill("140");
+    await expect.poll(() => scroller.evaluate((el) => el.scrollHeight > el.clientHeight + 1), { timeout: 8000 }).toBe(true);
+    await expect(scroller.locator("p").first()).toContainText("Zarpamos");
+    await expect(lane).toHaveAttribute("data-following", "true");
+    await scroller.evaluate((el) => el.scrollTo({ top: 0 }));
+    await expect(lane).toHaveAttribute("data-following", "false");
+    const latest = page.getByTestId("lane-target-latest");
+    await expect(latest).toHaveText("Back to latest");
+    await page.waitForTimeout(1500);
+    expect(await scroller.evaluate((el) => el.scrollTop)).toBeLessThan(40);
+    await latest.click();
+    await expect(lane).toHaveAttribute("data-following", "true");
+    await expect(latest).toHaveCount(0);
+    // The source lane works the same way.
+    const source = page.getByTestId("lane-source-scroll");
+    await source.evaluate((el) => el.scrollTo({ top: 0 }));
+    await expect(page.getByTestId("lane-source-latest")).toBeVisible();
+    await page.getByTestId("primary-action").click();
   });
 });

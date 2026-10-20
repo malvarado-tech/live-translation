@@ -81,6 +81,10 @@ export type ListenerStrings = {
   options: string;
   stopAudio: string;
   close: string;
+  /** Returns the caption history to the newest line. */
+  backToLatest: string;
+  /** Accessible name of the scrollable caption history. */
+  captionHistory: string;
 };
 
 export const LISTENER_STRINGS: Record<ListenerLang, ListenerStrings> = {
@@ -166,6 +170,8 @@ export const LISTENER_STRINGS: Record<ListenerLang, ListenerStrings> = {
     options: "Opciones",
     stopAudio: "Detener audio",
     close: "Cerrar",
+    backToLatest: "Volver a lo más reciente",
+    captionHistory: "Historial de subtítulos",
   },
   en: {
     liveTranslation: "Live translation",
@@ -248,6 +254,8 @@ export const LISTENER_STRINGS: Record<ListenerLang, ListenerStrings> = {
     options: "Options",
     stopAudio: "Stop audio",
     close: "Close",
+    backToLatest: "Back to latest",
+    captionHistory: "Caption history",
   },
 };
 

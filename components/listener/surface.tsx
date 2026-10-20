@@ -11,12 +11,16 @@
  * Two views over one model:
  *  - Captions (default): a caption stage.
  *  - Receiver: a channel card with the large language code and the level
- *    meter, and the last two caption lines, like an interpretation receiver.
+ *    meter, and the caption lines under it, like an interpretation receiver.
+ *
+ * In both views the captions keep the whole session: the newest line stays
+ * in view until the listener scrolls back, and "Back to latest" returns.
  */
 import Link from "next/link";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useState, type ReactNode } from "react";
 import { ListenerOptions } from "@/components/listener/options";
 import { buttonClass, HMeter } from "@/components/ui/controls";
+import { FOLLOW_FADE, LatestButton, useFollowScroll } from "@/components/ui/follow-scroll";
 import { Sheet } from "@/components/ui/sheet";
 import type { CaptionLine } from "@/lib/captions";
 import type { ListenerTone } from "@/lib/listener-health";
@@ -332,7 +336,6 @@ function ChannelItem({ channel: c, onPicked }: { channel: ListenerChannel; onPic
 function ReceiverBody(props: ListenerSurfaceProps & { size: TextSize }) {
   const { t, status, tone, level, lines, size } = props;
   const sz = SIZES[size];
-  const tail = lines.slice(-2);
   const stale = staleCaptions(status);
   return (
     <>
@@ -355,24 +358,23 @@ function ReceiverBody(props: ListenerSurfaceProps & { size: TextSize }) {
         </div>
       </section>
 
-      <CaptionStack lang={props.channel.lang} testId="caption-tail" gap="gap-2">
+      <CaptionStack t={t} lang={props.channel.lang} testId="caption-tail" gap="gap-2">
         {!props.captionsAvailable ? (
           <p className="text-base text-silk">{t.noCaptions}</p>
-        ) : tail.length === 0 ? (
+        ) : lines.length === 0 ? (
           status === "live" || status === "replay-playing" ? (
             <p className="text-base text-silk">{t.captionsPending}</p>
           ) : null
         ) : (
-          tail.map((line, i) => {
-            const current = i === tail.length - 1;
+          lines.map((line, i) => {
+            const current = i === lines.length - 1;
             return (
-              <p
+              <CaptionLineText
                 key={line.id}
-                className={current && !stale ? "font-bold text-ink" : current ? "font-bold text-silk" : "text-dim"}
-                style={{ fontSize: current ? sz.rCur : sz.rOld, lineHeight: 1.3 }}
-              >
-                {line.text}
-              </p>
+                text={line.text}
+                role={current ? (stale ? "stale" : "current") : "old"}
+                size={current ? sz.rCur : sz.rOld}
+              />
             );
           })
         )}
@@ -384,28 +386,26 @@ function ReceiverBody(props: ListenerSurfaceProps & { size: TextSize }) {
 function CaptionsBody(props: ListenerSurfaceProps & { size: TextSize }) {
   const { t, status, lines, size } = props;
   const sz = SIZES[size];
-  const visible = lines.slice(-12);
   const stale = staleCaptions(status);
 
   return (
     <>
       <LanguageControl props={props} />
-      <CaptionStack lang={props.channel.lang} testId="caption-stage" gap="gap-3">
+      <CaptionStack t={t} lang={props.channel.lang} testId="caption-stage" gap="gap-3">
         {!props.captionsAvailable ? (
           <p className="text-lg text-silk">{t.noCaptions}</p>
-        ) : visible.length === 0 ? (
+        ) : lines.length === 0 ? (
           <p className="text-lg text-silk">{t.captionsPending}</p>
         ) : (
-          visible.map((line, i) => {
-            const current = i === visible.length - 1;
+          lines.map((line, i) => {
+            const current = i === lines.length - 1;
             return (
-              <p
+              <CaptionLineText
                 key={line.id}
-                className={current && !stale ? "font-bold text-ink" : current ? "font-bold text-silk" : "text-dim"}
-                style={{ fontSize: current ? sz.cur : sz.old, lineHeight: 1.3 }}
-              >
-                {line.text}
-              </p>
+                text={line.text}
+                role={current ? (stale ? "stale" : "current") : "old"}
+                size={current ? sz.cur : sz.old}
+              />
             );
           })
         )}
@@ -414,68 +414,84 @@ function CaptionsBody(props: ListenerSurfaceProps & { size: TextSize }) {
   );
 }
 
+/** One caption line; memoised so a long history re-renders only what changed. */
+const CaptionLineText = memo(function CaptionLineText({
+  text,
+  role,
+  size,
+}: {
+  text: string;
+  role: "current" | "stale" | "old";
+  size: number;
+}) {
+  return (
+    <p
+      className={role === "current" ? "font-bold text-ink" : role === "stale" ? "font-bold text-silk" : "text-dim"}
+      style={{ fontSize: size, lineHeight: 1.3 }}
+    >
+      {text}
+    </p>
+  );
+});
+
 /**
  * Caption lines stacked from the top, right under the language control.
  * The stack takes the free height between that control and the status
- * line; while the lines fit they keep their place at the top, and once
- * they overflow the newest line stays in view and older lines move up
- * under a fade.
+ * line; while the lines fit they keep their place at the top. Once they
+ * overflow, the box follows the newest line and older lines move up under
+ * a fade. Scrolling up reads back through the session; the box then stays
+ * put and "Back to latest" returns to the newest line.
  */
 const FADE_PX = 40;
 const MIN_STACK_PX = 112;
 
 function CaptionStack({
+  t,
   lang,
   testId,
   gap,
   children,
 }: {
+  t: ListenerStrings;
   lang: string;
   testId: string;
   gap: string;
   children: ReactNode;
 }) {
-  const boxRef = useRef<HTMLDivElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
-  const [overflow, setOverflow] = useState(false);
   // The box never gets shorter than the newest line plus the fade above it,
   // so on a short screen the page scrolls before that line is cut.
   const [minHeight, setMinHeight] = useState<number | undefined>(undefined);
-
-  useEffect(() => {
-    const box = boxRef.current;
-    const content = contentRef.current;
-    if (!box || !content || typeof ResizeObserver === "undefined") return;
-    const measure = () => {
-      const newest = content.lastElementChild as HTMLElement | null;
-      setMinHeight(newest ? Math.max(MIN_STACK_PX, newest.offsetHeight + FADE_PX) : undefined);
-      setOverflow(content.offsetHeight > box.clientHeight + 1);
-    };
-    const ro = new ResizeObserver(measure);
-    ro.observe(box);
-    ro.observe(content);
-    measure();
-    return () => ro.disconnect();
+  const onMeasure = useCallback((content: HTMLElement) => {
+    const newest = content.lastElementChild as HTMLElement | null;
+    setMinHeight(newest ? Math.max(MIN_STACK_PX, newest.offsetHeight + FADE_PX) : undefined);
   }, []);
+  const { scrollRef, contentRef, following, overflow, resume } = useFollowScroll(onMeasure);
 
   return (
     <div
-      ref={boxRef}
-      className="relative min-h-28 flex-1 basis-0 overflow-hidden font-caption"
+      className="relative min-h-28 flex-1 basis-0 font-caption"
       style={{ minHeight }}
       lang={lang}
       data-testid={testId}
       data-overflow={overflow ? "true" : "false"}
+      data-following={following ? "true" : "false"}
     >
       <div
-        className={`absolute inset-x-0 top-0 flex max-h-full flex-col justify-end overflow-hidden ${
-          overflow ? "[mask-image:linear-gradient(to_bottom,transparent,black_40px)]" : ""
+        ref={scrollRef}
+        role="log"
+        aria-live="off"
+        aria-label={t.captionHistory}
+        tabIndex={0}
+        data-testid="caption-scroll"
+        className={`absolute inset-0 overflow-y-auto overscroll-contain [scrollbar-width:thin] ${
+          overflow && following ? FOLLOW_FADE : ""
         }`}
       >
-        <div ref={contentRef} className={`flex shrink-0 flex-col ${gap}`}>
+        <div ref={contentRef} className={`flex flex-col ${gap}`}>
           {children}
         </div>
       </div>
+      <LatestButton visible={!following} label={t.backToLatest} onClick={resume} testId="caption-latest" />
     </div>
   );
 }

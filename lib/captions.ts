@@ -29,7 +29,11 @@ export const emptyCaptions: CaptionState = {
   nextId: 1,
 };
 
-const MAX_LINES = 40;
+/**
+ * Lines kept for scroll-back: a whole session at a typical pace (a line
+ * every few seconds for about three hours). Older lines are dropped.
+ */
+export const MAX_CAPTION_LINES = 2000;
 const SOFT_LIMIT = 110;
 const HARD_LIMIT = 180;
 
@@ -38,7 +42,7 @@ function pushLine(state: CaptionState, text: string, at: number | null): Caption
   if (!t) return state;
   const lines = [...state.lines, { id: state.nextId, text: t, at: state.currentAt }];
   return {
-    lines: lines.length > MAX_LINES ? lines.slice(-MAX_LINES) : lines,
+    lines: lines.length > MAX_CAPTION_LINES ? lines.slice(-MAX_CAPTION_LINES) : lines,
     current: state.current,
     currentAt: state.current.trim() ? at : null,
     nextId: state.nextId + 1,

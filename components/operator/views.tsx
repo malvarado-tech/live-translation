@@ -11,7 +11,7 @@
  * screen.
  */
 import { QRCodeSVG } from "qrcode.react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 import { AudioSection, type AudioModel } from "@/components/operator/audio-section";
 import {
   Button,
@@ -23,6 +23,7 @@ import {
   VMeter,
   type TallyTone,
 } from "@/components/ui/controls";
+import { FOLLOW_FADE, LatestButton, useFollowScroll } from "@/components/ui/follow-scroll";
 import type { CaptionLine } from "@/lib/captions";
 import { useOperatorView, useTheme } from "@/lib/prefs";
 
@@ -262,6 +263,41 @@ function fmtTime(ms: number | null | undefined): string {
   return `${String(m).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 }
 
+const LaneLine = memo(function LaneLine({
+  at,
+  text,
+  current,
+  size,
+}: {
+  at: number | null | undefined;
+  text: string;
+  current: boolean;
+  size: "md" | "lg";
+}) {
+  return (
+    <div className="grid grid-cols-[44px_1fr] gap-3">
+      <span className="tabular pt-0.5 font-cond text-sm text-silk">{fmtTime(at)}</span>
+      <p
+        className={
+          size === "lg"
+            ? current
+              ? "font-caption text-[30px] font-bold leading-tight text-ink"
+              : "font-caption text-[22px] leading-snug text-silk"
+            : current
+              ? "text-[17px] font-medium text-ink"
+              : "text-[15px] text-silk"
+        }
+      >
+        {text}
+      </p>
+    </div>
+  );
+});
+
+/**
+ * A transcript lane with the whole session: it follows the newest line
+ * until the operator scrolls back, then "Back to latest" returns.
+ */
 export function TranscriptLane({
   model,
   size = "md",
@@ -271,11 +307,13 @@ export function TranscriptLane({
   size?: "md" | "lg";
   testId?: string;
 }) {
-  const lines = model.lines.slice(size === "lg" ? -10 : -6);
+  const lines = model.lines;
+  const { scrollRef, contentRef, following, overflow, resume } = useFollowScroll();
   return (
     <section
       className="flex min-h-0 flex-col gap-2 rounded-md border border-line bg-panel px-4 py-3"
       data-testid={testId}
+      data-following={following ? "true" : "false"}
       aria-label={model.title}
     >
       <div className="flex items-center justify-between gap-2">
@@ -286,35 +324,35 @@ export function TranscriptLane({
           </span>
         ) : null}
       </div>
-      <div
-        className="flex flex-1 flex-col justify-end gap-2 overflow-hidden"
-        lang={model.lang}
-      >
-        {lines.length === 0 ? (
-          <p className="text-[15px] text-silk">{model.placeholder}</p>
-        ) : (
-          lines.map((l, i) => {
-            const current = i === lines.length - 1;
-            return (
-              <div key={l.id} className="grid grid-cols-[44px_1fr] gap-3">
-                <span className="tabular pt-0.5 font-cond text-sm text-silk">{fmtTime(l.at)}</span>
-                <p
-                  className={
-                    size === "lg"
-                      ? current
-                        ? "font-caption text-[30px] font-bold leading-tight text-ink"
-                        : "font-caption text-[22px] leading-snug text-silk"
-                      : current
-                        ? "text-[17px] font-medium text-ink"
-                        : "text-[15px] text-silk"
-                  }
-                >
-                  {l.text}
-                </p>
-              </div>
-            );
-          })
-        )}
+      <div className="relative min-h-0 flex-1">
+        <div
+          ref={scrollRef}
+          role="log"
+          aria-live="off"
+          aria-label={`${model.title}, transcript`}
+          tabIndex={0}
+          data-testid={testId ? `${testId}-scroll` : undefined}
+          className={`overflow-y-auto overscroll-contain [scrollbar-width:thin] ${
+            size === "lg" ? "max-h-[min(62vh,640px)]" : "max-h-72"
+          } ${overflow && following ? FOLLOW_FADE : ""}`}
+          lang={model.lang}
+        >
+          <div ref={contentRef} className="flex flex-col gap-2">
+            {lines.length === 0 ? (
+              <p className="text-[15px] text-silk">{model.placeholder}</p>
+            ) : (
+              lines.map((l, i) => (
+                <LaneLine key={l.id} at={l.at} text={l.text} current={i === lines.length - 1} size={size} />
+              ))
+            )}
+          </div>
+        </div>
+        <LatestButton
+          visible={!following}
+          label="Back to latest"
+          onClick={resume}
+          testId={testId ? `${testId}-latest` : "lane-latest"}
+        />
       </div>
     </section>
   );

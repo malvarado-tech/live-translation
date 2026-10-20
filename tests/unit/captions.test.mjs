@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { appendCaption, captionLines, emptyCaptions } from "../../lib/captions.ts";
+import { appendCaption, captionLines, emptyCaptions, MAX_CAPTION_LINES } from "../../lib/captions.ts";
 
 const feed = (deltas) => deltas.reduce(appendCaption, emptyCaptions);
 
@@ -28,13 +28,22 @@ test("a long run-on sentence breaks at a comma", () => {
   assert.ok(captionLines(s).every((l) => l.text.length <= 180));
 });
 
-test("ids are stable and unique; old lines are trimmed", () => {
+test("a session's lines are kept for scroll-back", () => {
   let s = emptyCaptions;
-  for (let i = 0; i < 60; i++) s = appendCaption(s, `Linea ${i}. `);
-  assert.equal(s.lines.length, 40);
+  for (let i = 0; i < 600; i++) s = appendCaption(s, `Linea ${i}. `);
+  assert.equal(s.lines.length, 600);
+  assert.equal(s.lines[0].text, "Linea 0.");
+});
+
+test("ids are stable and unique; lines beyond the limit are trimmed", () => {
+  let s = emptyCaptions;
+  const n = MAX_CAPTION_LINES + 20;
+  for (let i = 0; i < n; i++) s = appendCaption(s, `Linea ${i}. `);
+  assert.equal(s.lines.length, MAX_CAPTION_LINES);
   const ids = s.lines.map((l) => l.id);
   assert.equal(new Set(ids).size, ids.length);
-  assert.equal(s.lines.at(-1).text, "Linea 59.");
+  assert.equal(s.lines[0].text, "Linea 20.");
+  assert.equal(s.lines.at(-1).text, `Linea ${n - 1}.`);
 });
 
 test("lines carry the time their first words arrived", () => {
