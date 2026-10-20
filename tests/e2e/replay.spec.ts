@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { expectContrast, setPrefs } from "./helpers";
+import { expectContrast, expectNoEmDash, expectNoHorizontalScroll, setPrefs, smallTargets } from "./helpers";
 
 async function time(page: Page): Promise<number> {
   const [m, s] = (await page.getByTestId("replay-time").first().innerText()).split(":").map(Number);
@@ -197,6 +197,53 @@ test.describe("caption history", () => {
       await page.keyboard.press("Escape");
       await expect(page.getByTestId("caption-latest")).toHaveText("Back to latest");
     });
+  }
+});
+
+test.describe("operator replay controls", () => {
+  for (const view of ["desk", "rows"] as const) {
+    for (const theme of ["light", "night"] as const) {
+      test(`${view} view, ${theme} theme: audio and room controls shown, disabled, with one note`, async ({ page }, info) => {
+        await setPrefs(page, { "lt.view.operator": view, "lt.theme": theme });
+        await page.goto("/replay/operator");
+        await expect(page.getByTestId(`${view}-view`)).toBeVisible();
+        const audio = page.getByTestId("audio-section");
+        await expect(audio).toBeVisible();
+        await expect(page.getByTestId("audio-unavailable")).toHaveText("Not available in the recording");
+        await expect(page.getByText("Not available in the recording")).toHaveCount(1);
+        for (const id of ["audio-input", "audio-output", "audio-refresh"]) {
+          await expect(audio.getByTestId(id)).toBeDisabled();
+          await expect(audio.getByTestId(id)).toHaveAttribute("aria-describedby", "audio-unavailable-note");
+        }
+        for (const [id, label] of [["open-room", "Open room"], ["end-session", "End session"]]) {
+          const b = page.getByTestId(id);
+          await expect(b).toBeVisible();
+          await expect(b).toBeDisabled();
+          await expect(b).toHaveText(label);
+          await expect(b).toHaveAttribute("aria-describedby", "audio-unavailable-note");
+        }
+
+        // Monitor and the level work: they come from the recording.
+        await page.getByTestId("primary-action").click();
+        await expect
+          .poll(async () => Number(await audio.getByTestId("audio-meter").getAttribute("data-level")), { timeout: 8000 })
+          .toBeGreaterThan(0.02);
+        const monitor = audio.getByTestId("audio-monitor");
+        await expect(monitor.getByRole("radio", { name: "ES", exact: true })).toHaveAttribute("aria-checked", "true");
+        await monitor.getByRole("radio", { name: "PT", exact: true }).click();
+        await expect(page.getByTestId("monitor-pt")).toHaveAttribute("aria-pressed", "true");
+        await expect(page.getByTestId("lane-target")).toContainText("Zarpamos neste", { timeout: 8000 });
+        await page.getByTestId("primary-action").click();
+        await page.waitForTimeout(300);
+        await expectContrast(page);
+        await expectNoEmDash(page);
+        await expectNoHorizontalScroll(page);
+        if (info.project.name === "mobile") {
+          const small = await smallTargets(page, "[data-testid=audio-section] button, [data-testid=session-bar] button");
+          expect(small, small.join("\n")).toEqual([]);
+        }
+      });
+    }
   }
 });
 

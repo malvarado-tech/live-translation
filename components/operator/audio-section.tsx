@@ -40,7 +40,7 @@ export type AudioModel = {
 };
 
 export const AUDIO_INPUT_ID = "audio-input";
-const NOTE_ID = "audio-unavailable-note";
+export const AUDIO_NOTE_ID = "audio-unavailable-note";
 
 export function DeviceSelect({
   id,
@@ -90,7 +90,7 @@ export function DeviceSelect({
 
 export function AudioSection({ audio, wide = false }: { audio: AudioModel; wide?: boolean }) {
   const locked = Boolean(audio.unavailableNote);
-  const describedBy = locked ? NOTE_ID : undefined;
+  const describedBy = locked ? AUDIO_NOTE_ID : undefined;
   return (
     <section
       aria-labelledby="audio-heading"
@@ -102,7 +102,7 @@ export function AudioSection({ audio, wide = false }: { audio: AudioModel; wide?
           Audio
         </h2>
         {audio.unavailableNote ? (
-          <p id={NOTE_ID} className="text-sm text-silk" data-testid="audio-unavailable">
+          <p id={AUDIO_NOTE_ID} className="text-sm text-silk" data-testid="audio-unavailable">
             {audio.unavailableNote}
           </p>
         ) : null}

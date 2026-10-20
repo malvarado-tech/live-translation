@@ -5,8 +5,12 @@
  * session in /replay instead of a live room. All channels play in step from
  * the source recording's clock; each is metered, and the monitor button
  * chooses which one is heard. No keys, no server routes.
+ *
+ * The room controls and the audio devices are shown as on the live
+ * screen, disabled, with one note: a recording has no room or devices.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AUDIO_NOTE_ID, type AudioModel } from "@/components/operator/audio-section";
 import {
   OperatorBody,
   SessionBar,
@@ -24,6 +28,7 @@ import { getAudioContext, primeAudio } from "@/lib/use-audio-level";
 type Levels = Record<string, number>;
 
 const DRIFT_S = 0.2;
+const UNAVAILABLE = "Not available in the recording";
 
 function clock(s: number): string {
   const v = Math.max(0, Math.floor(s));
@@ -200,6 +205,26 @@ export default function OperatorReplayPage() {
     ),
   });
 
+  const audio: AudioModel | null = source
+    ? {
+        input: { value: "", devices: [], defaultLabel: "1962 recording" },
+        output: { value: "", devices: [], defaultLabel: "System default output", supported: true },
+        level: playing ? (levels[source.code] ?? 0) : null,
+        levelText: playing ? "Recorded speech" : "Paused",
+        monitor: {
+          value: monitor,
+          onChange: setMonitor,
+          options: [
+            ...translated.map((c) => ({ value: c.code, label: c.code.toUpperCase() })),
+            { value: source.code, label: source.code.toUpperCase() },
+            { value: "mute", label: "Mute" },
+          ],
+        },
+        refresh: { label: "Refresh devices" },
+        unavailableNote: UNAVAILABLE,
+      }
+    : null;
+
   const model: OperatorModel | null = source
     ? {
         input: {
@@ -239,7 +264,7 @@ export default function OperatorReplayPage() {
           tone: playing ? "ok" : "dim",
           lang: uiLangForRoom(c.code),
         })),
-        audio: null,
+        audio,
         log: [],
       }
     : null;
@@ -256,9 +281,17 @@ export default function OperatorReplayPage() {
           { label: "Length", value: clock(duration) },
         ]}
         actions={
-          <Button tone="primary" onClick={playing ? pause : play} ariaKeyShortcuts="Space" testId="primary-action">
-            {playing ? "Pause" : "Play"} <Kbd>Space</Kbd>
-          </Button>
+          <>
+            <Button tone="primary" onClick={playing ? pause : play} ariaKeyShortcuts="Space" testId="primary-action">
+              {playing ? "Pause" : "Play"} <Kbd>Space</Kbd>
+            </Button>
+            <Button disabled title={UNAVAILABLE} describedBy={AUDIO_NOTE_ID} testId="open-room">
+              Open room
+            </Button>
+            <Button tone="danger" disabled title={UNAVAILABLE} describedBy={AUDIO_NOTE_ID} testId="end-session">
+              End session
+            </Button>
+          </>
         }
       />
       <main className="mx-auto flex w-full max-w-[1600px] flex-1 flex-col gap-5 px-4 py-5">
