@@ -14,7 +14,7 @@
  *    meter, and the last two caption lines, like an interpretation receiver.
  */
 import Link from "next/link";
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ListenerOptions } from "@/components/listener/options";
 import { buttonClass, HMeter } from "@/components/ui/controls";
 import { Sheet } from "@/components/ui/sheet";
@@ -355,7 +355,7 @@ function ReceiverBody(props: ListenerSurfaceProps & { size: TextSize }) {
         </div>
       </section>
 
-      <div className="flex flex-1 flex-col justify-end gap-2 font-caption" lang={props.channel.lang} data-testid="caption-tail">
+      <CaptionStack lang={props.channel.lang} testId="caption-tail" gap="gap-2">
         {!props.captionsAvailable ? (
           <p className="text-base text-silk">{t.noCaptions}</p>
         ) : tail.length === 0 ? (
@@ -376,7 +376,7 @@ function ReceiverBody(props: ListenerSurfaceProps & { size: TextSize }) {
             );
           })
         )}
-      </div>
+      </CaptionStack>
     </>
   );
 }
@@ -390,11 +390,7 @@ function CaptionsBody(props: ListenerSurfaceProps & { size: TextSize }) {
   return (
     <>
       <LanguageControl props={props} />
-      <div
-        className="relative flex min-h-48 flex-1 flex-col justify-end gap-3 overflow-hidden font-caption [mask-image:linear-gradient(to_bottom,transparent,black_18%)]"
-        lang={props.channel.lang}
-        data-testid="caption-stage"
-      >
+      <CaptionStack lang={props.channel.lang} testId="caption-stage" gap="gap-3">
         {!props.captionsAvailable ? (
           <p className="text-lg text-silk">{t.noCaptions}</p>
         ) : visible.length === 0 ? (
@@ -413,8 +409,74 @@ function CaptionsBody(props: ListenerSurfaceProps & { size: TextSize }) {
             );
           })
         )}
-      </div>
+      </CaptionStack>
     </>
+  );
+}
+
+/**
+ * Caption lines stacked from the top, right under the language control.
+ * The stack takes the free height between that control and the status
+ * line; while the lines fit they keep their place at the top, and once
+ * they overflow the newest line stays in view and older lines move up
+ * under a fade.
+ */
+const FADE_PX = 40;
+const MIN_STACK_PX = 112;
+
+function CaptionStack({
+  lang,
+  testId,
+  gap,
+  children,
+}: {
+  lang: string;
+  testId: string;
+  gap: string;
+  children: ReactNode;
+}) {
+  const boxRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [overflow, setOverflow] = useState(false);
+  // The box never gets shorter than the newest line plus the fade above it,
+  // so on a short screen the page scrolls before that line is cut.
+  const [minHeight, setMinHeight] = useState<number | undefined>(undefined);
+
+  useEffect(() => {
+    const box = boxRef.current;
+    const content = contentRef.current;
+    if (!box || !content || typeof ResizeObserver === "undefined") return;
+    const measure = () => {
+      const newest = content.lastElementChild as HTMLElement | null;
+      setMinHeight(newest ? Math.max(MIN_STACK_PX, newest.offsetHeight + FADE_PX) : undefined);
+      setOverflow(content.offsetHeight > box.clientHeight + 1);
+    };
+    const ro = new ResizeObserver(measure);
+    ro.observe(box);
+    ro.observe(content);
+    measure();
+    return () => ro.disconnect();
+  }, []);
+
+  return (
+    <div
+      ref={boxRef}
+      className="relative min-h-28 flex-1 basis-0 overflow-hidden font-caption"
+      style={{ minHeight }}
+      lang={lang}
+      data-testid={testId}
+      data-overflow={overflow ? "true" : "false"}
+    >
+      <div
+        className={`absolute inset-x-0 top-0 flex max-h-full flex-col justify-end overflow-hidden ${
+          overflow ? "[mask-image:linear-gradient(to_bottom,transparent,black_40px)]" : ""
+        }`}
+      >
+        <div ref={contentRef} className={`flex shrink-0 flex-col ${gap}`}>
+          {children}
+        </div>
+      </div>
+    </div>
   );
 }
 
