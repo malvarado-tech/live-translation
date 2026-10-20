@@ -200,6 +200,41 @@ test.describe("operator replay", () => {
     expect(lines).toBe(1);
     await expectNoHorizontalScroll(page);
   });
+
+  test("the listener link next to the QR code wraps after a slash and copies exactly", async ({ page }) => {
+    await page.goto("/replay/operator");
+    const link = page.getByTestId("event-url");
+    await expect(link).toBeVisible();
+    const url = await link.innerText();
+    expect(url).toMatch(/^https?:\/\/.+\/replay$/);
+    // Narrow the card so the link has to wrap, as it does with a longer origin;
+    // every part between break points still fits on a line.
+    const lines = await link.evaluate((el) => {
+      const longest = Math.max(...(el.textContent ?? "").split(/(?<=\/)/).map((p) => p.length));
+      (el as HTMLElement).style.width = `${longest + 2}ch`;
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      const ends: string[] = [];
+      let prevTop: number | null = null;
+      let prevChar = "";
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        const text = n.textContent ?? "";
+        for (let i = 0; i < text.length; i++) {
+          const r = document.createRange();
+          r.setStart(n, i);
+          r.setEnd(n, i + 1);
+          const top = Math.round(r.getBoundingClientRect().top);
+          if (prevTop !== null && top > prevTop) ends.push(prevChar);
+          prevTop = top;
+          prevChar = text[i];
+        }
+      }
+      return ends;
+    });
+    expect(lines.length).toBeGreaterThan(0);
+    for (const end of lines) expect(end).toBe("/");
+    // The break points add no characters: the text and a copy stay exact.
+    expect((await link.textContent())?.trim()).toBe(url);
+  });
 });
 
 test.describe("caption history", () => {

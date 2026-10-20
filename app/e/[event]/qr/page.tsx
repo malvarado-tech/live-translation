@@ -13,6 +13,7 @@
 import Link from "next/link";
 import { QRCodeSVG } from "qrcode.react";
 import { use, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { UrlText } from "@/components/ui/url-text";
 import { eventRoomName, slugify, type LiveLanguage } from "@/lib/event-rooms";
 import { languageLabel, TARGET_LANGUAGES } from "@/lib/languages";
 import { channelState, LISTENER_STRINGS } from "@/lib/listener-strings";
@@ -169,10 +170,10 @@ export default function QrPage({
           </div>
 
           <p
-            className="break-all font-cond text-[clamp(30px,4.6vw,80px)] font-bold leading-none text-ink"
+            className="font-cond text-[clamp(30px,4.6vw,80px)] font-bold leading-none text-ink"
             data-testid="qr-url"
           >
-            {shortUrl}
+            <UrlText url={shortUrl} />
           </p>
 
           <section aria-labelledby="qr-languages-heading" className="flex flex-col gap-3">

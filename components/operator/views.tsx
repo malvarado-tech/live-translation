@@ -11,6 +11,7 @@
  * screen.
  */
 import { QRCodeSVG } from "qrcode.react";
+import { UrlText } from "@/components/ui/url-text";
 import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 import { AudioSection, type AudioModel } from "@/components/operator/audio-section";
 import {
@@ -379,8 +380,8 @@ export function QrCard({ qr, compact = false }: { qr: QrModel; compact?: boolean
         <QRCodeSVG value={qr.url} size={compact ? 112 : 168} fgColor="#111519" bgColor="#ffffff" />
       </div>
       <div className="flex min-w-0 flex-col gap-2">
-        <p className="break-all font-cond text-lg font-semibold text-ink" data-testid="event-url">
-          {qr.url}
+        <p className="font-cond text-lg font-semibold text-ink" data-testid="event-url">
+          <UrlText url={qr.url} />
         </p>
         <p className="text-sm text-silk">{qr.caption}</p>
         <div className="flex flex-wrap gap-2">
@@ -409,7 +410,9 @@ export function QrCard({ qr, compact = false }: { qr: QrModel; compact?: boolean
           className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-6 bg-white p-8 text-[#111519]"
         >
           <QRCodeSVG value={qr.url} size={Math.min(560, 0.6 * 1000)} fgColor="#111519" bgColor="#ffffff" className="h-auto max-h-[62vh] w-auto max-w-[80vw]" />
-          <p className="break-all text-center font-cond text-5xl font-bold">{qr.url}</p>
+          <p className="text-center font-cond text-5xl font-bold">
+            <UrlText url={qr.url} />
+          </p>
           <p className="text-2xl">{qr.caption}</p>
           <button
             type="button"
