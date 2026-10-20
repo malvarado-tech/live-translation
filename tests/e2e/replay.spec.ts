@@ -152,7 +152,7 @@ test.describe("operator replay", () => {
   test("plays read-only with every channel metered", async ({ page }) => {
     await page.goto("/replay/operator");
     await expect(page.getByTestId("replay-label")).toContainText("Read-only replay");
-    await page.getByTestId("primary-action").click();
+    await page.getByTestId("replay-play").click();
     await expect(page.getByTestId("tally-es")).toHaveText("Replay");
     await expect(page.getByTestId("tally-en")).toHaveText("Original");
     for (const code of ["input", "es", "pt", "en"]) {
@@ -166,6 +166,24 @@ test.describe("operator replay", () => {
     await page.getByTestId("settings-button").click();
     await page.getByRole("radio", { name: "Rows" }).click();
     await expect(page.getByTestId("rows-view")).toBeVisible();
+  });
+
+  test("the transport's play button is the only play control, as in the listener replay", async ({ page }) => {
+    await page.goto("/replay/operator");
+    const play = page.getByTestId("replay-play");
+    await expect(play).toHaveCount(1);
+    await expect(play).toBeEnabled();
+    await expect(page.getByTestId("primary-action")).toHaveCount(0);
+    await expect(page.getByTestId("session-bar").getByRole("button", { name: /^(Play|Pause)/ })).toHaveCount(0);
+    await expect(play).toHaveAttribute("aria-keyshortcuts", "Space");
+    await play.click();
+    await expect(play).toHaveAttribute("data-state", "playing");
+    await expect(page.getByTestId("tally-es")).toHaveText("Replay");
+    // Space toggles the same control.
+    await page.locator("main").click({ position: { x: 5, y: 5 } });
+    await page.keyboard.press("Space");
+    await expect(play).toHaveAttribute("data-state", "paused");
+    await expect(page.getByTestId("tally-es")).toHaveText("Paused");
   });
 });
 
@@ -251,7 +269,7 @@ test.describe("operator replay controls", () => {
         }
 
         // Monitor and the level work: they come from the recording.
-        await page.getByTestId("primary-action").click();
+        await page.getByTestId("replay-play").click();
         await expect
           .poll(async () => Number(await audio.getByTestId("audio-meter").getAttribute("data-level")), { timeout: 8000 })
           .toBeGreaterThan(0.02);
@@ -260,7 +278,7 @@ test.describe("operator replay controls", () => {
         await monitor.getByRole("radio", { name: "PT", exact: true }).click();
         await expect(page.getByTestId("monitor-pt")).toHaveAttribute("aria-pressed", "true");
         await expect(page.getByTestId("lane-target")).toContainText("Zarpamos neste", { timeout: 8000 });
-        await page.getByTestId("primary-action").click();
+        await page.getByTestId("replay-play").click();
         await page.waitForTimeout(300);
         await expectContrast(page);
         await expectNoEmDash(page);
@@ -277,7 +295,7 @@ test.describe("operator replay controls", () => {
 test.describe("operator transcript history", () => {
   test("the lanes scroll back and return to the newest line", async ({ page }) => {
     await page.goto("/replay/operator");
-    await page.getByTestId("primary-action").click();
+    await page.getByTestId("replay-play").click();
     const lane = page.getByTestId("lane-target");
     const scroller = page.getByTestId("lane-target-scroll");
     await expect(lane).toContainText("Zarpamos", { timeout: 8000 });
@@ -298,6 +316,6 @@ test.describe("operator transcript history", () => {
     const source = page.getByTestId("lane-source-scroll");
     await source.evaluate((el) => el.scrollTo({ top: 0 }));
     await expect(page.getByTestId("lane-source-latest")).toBeVisible();
-    await page.getByTestId("primary-action").click();
+    await page.getByTestId("replay-play").click();
   });
 });

@@ -12,6 +12,7 @@ export function Transport({
   onSeek,
   labels,
   disabled = false,
+  keyShortcuts,
   testId = "replay-transport",
 }: {
   t: number;
@@ -23,6 +24,8 @@ export function Transport({
   labels: { play: string; pause: string; position: string };
   /** Nothing to play yet (the manifest is still loading). */
   disabled?: boolean;
+  /** Keyboard shortcut that also toggles playback (aria-keyshortcuts). */
+  keyShortcuts?: string;
   testId?: string;
 }) {
   return (
@@ -35,6 +38,8 @@ export function Transport({
         onClick={playing ? onPause : onPlay}
         disabled={disabled}
         aria-label={playing ? labels.pause : labels.play}
+        aria-keyshortcuts={keyShortcuts}
+        title={keyShortcuts ? `${playing ? labels.pause : labels.play} (${keyShortcuts})` : undefined}
         data-testid="replay-play"
         data-state={playing ? "playing" : "paused"}
         className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-primary text-on-primary disabled:opacity-50"

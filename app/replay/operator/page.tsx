@@ -8,6 +8,9 @@
  *
  * The room controls and the audio devices are shown as on the live
  * screen, disabled, with one note: a recording has no room or devices.
+ *
+ * As in the listener replay, the transport's play button is the only play
+ * control; Space toggles it.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AUDIO_NOTE_ID, type AudioModel } from "@/components/operator/audio-section";
@@ -19,7 +22,7 @@ import {
 } from "@/components/operator/views";
 import { Transport } from "@/components/replay/transport";
 import { audioUrl, setMediaMuted, setMediaTime, useReplayManifest } from "@/components/replay/use-replay";
-import { Button, Kbd } from "@/components/ui/controls";
+import { Button } from "@/components/ui/controls";
 import { BASE_PATH } from "@/lib/base-path";
 import { LISTENER_STRINGS, uiLangForRoom } from "@/lib/listener-strings";
 import { cuesUntil, type ReplayChannel } from "@/lib/replay";
@@ -282,9 +285,6 @@ export default function OperatorReplayPage() {
         ]}
         actions={
           <>
-            <Button tone="primary" onClick={playing ? pause : play} ariaKeyShortcuts="Space" testId="primary-action">
-              {playing ? "Pause" : "Play"} <Kbd>Space</Kbd>
-            </Button>
             <Button disabled title={UNAVAILABLE} describedBy={AUDIO_NOTE_ID} testId="open-room">
               Open room
             </Button>
@@ -305,6 +305,8 @@ export default function OperatorReplayPage() {
           onPlay={play}
           onPause={pause}
           onSeek={seek}
+          disabled={state.kind !== "ready"}
+          keyShortcuts="Space"
           labels={{ play: "Play", pause: "Pause", position: "Position" }}
         />
         {state.kind === "error" ? (
