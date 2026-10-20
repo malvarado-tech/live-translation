@@ -76,6 +76,8 @@ export type ListenerStrings = {
   position: string;
   attribution: string;
   audioBlocked: string;
+  /** Replay: the play button is the control that enables audio. */
+  audioBlockedReplay: string;
   options: string;
   stopAudio: string;
   close: string;
@@ -160,6 +162,7 @@ export const LISTENER_STRINGS: Record<ListenerLang, ListenerStrings> = {
     attribution: "Créditos",
     audioBlocked:
       "Reproducción bloqueada por el navegador. Un toque en «Escuchar» la activa.",
+    audioBlockedReplay: "Reproducción bloqueada por el navegador. Un toque en «Reproducir» la activa.",
     options: "Opciones",
     stopAudio: "Detener audio",
     close: "Cerrar",
@@ -241,6 +244,7 @@ export const LISTENER_STRINGS: Record<ListenerLang, ListenerStrings> = {
     position: "Position",
     attribution: "Credits",
     audioBlocked: "Playback blocked by the browser. A tap on Listen enables it.",
+    audioBlockedReplay: "Playback blocked by the browser. A tap on Play enables it.",
     options: "Options",
     stopAudio: "Stop audio",
     close: "Close",

@@ -28,7 +28,7 @@ test.describe("listener replay", () => {
       "1962 recording · AI-generated translation and voice",
     );
     await expect(page.getByTestId("replay-attribution")).toContainText("Public domain");
-    await page.getByTestId("listen-button").click();
+    await page.getByTestId("replay-play").click();
     await page.waitForTimeout(1500);
     expect(apiCalls).toEqual([]);
   });
@@ -36,7 +36,7 @@ test.describe("listener replay", () => {
   test("one clock drives audio and captions across language switches", async ({ page }) => {
     await setPrefs(page, { "lt.view.listener": "receiver" });
     await page.goto("/replay");
-    await page.getByTestId("listen-button").click();
+    await page.getByTestId("replay-play").click();
     await expect(page.getByTestId("replay-play")).toHaveAttribute("data-state", "playing");
     await expect(page.getByTestId("caption-tail")).toContainText("Zarpamos", { timeout: 5000 });
     await expect(page.getByTestId("listener-tally")).toHaveText("Reproducción en curso.");
@@ -69,10 +69,51 @@ test.describe("listener replay", () => {
     await expect(page.getByTestId("listener-tally")).toHaveText("Reproducción en pausa.");
   });
 
+  test("the transport's play button is the only play control", async ({ page }) => {
+    await page.goto("/replay");
+    await expect(page.getByTestId("replay-play")).toBeEnabled();
+    await expect(page.getByTestId("listen-button")).toHaveCount(0);
+    await expect(page.getByTestId("mute-button")).toBeVisible();
+    await page.getByTestId("replay-play").click();
+    await expect(page.getByTestId("replay-play")).toHaveAttribute("data-state", "playing");
+    await expect(page.getByTestId("listener-tally")).toHaveText("Reproducción en curso.");
+  });
+
+  for (const size of [
+    { width: 390, height: 844 },
+    { width: 320, height: 568 },
+    { width: 430, height: 932 },
+  ]) {
+    test(`captions start under the language button and keep the newest line in view (${size.width}x${size.height})`, async ({ page }, info) => {
+      test.skip(info.project.name !== "mobile", "phone layout");
+      await page.setViewportSize(size);
+      await page.goto("/replay");
+      await page.getByTestId("replay-play").click();
+      const stage = page.getByTestId("caption-stage");
+      await expect(stage).toContainText("Zarpamos", { timeout: 5000 });
+      await page.getByTestId("replay-play").click();
+
+      // Few lines: the stack sits right under the language button.
+      const lang = (await page.getByTestId("language-button").boundingBox())!;
+      const first = (await stage.locator("p").first().boundingBox())!;
+      expect(first.y - (lang.y + lang.height)).toBeLessThan(40);
+
+      // Many lines: older lines move up under the fade, the newest stays whole.
+      await page.getByTestId("replay-scrub").fill("125");
+      await expect(stage).toContainText(/Luna/, { timeout: 5000 });
+      await expect(stage).toHaveAttribute("data-overflow", "true");
+      const box = (await stage.boundingBox())!;
+      const newest = (await stage.locator("p").last().boundingBox())!;
+      expect(newest.y).toBeGreaterThanOrEqual(box.y);
+      expect(newest.y + newest.height).toBeLessThanOrEqual(box.y + box.height + 1);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(size.width);
+    });
+  }
+
   test("captions view shows the stage and the language sheet", async ({ page }) => {
     await page.goto("/replay");
     await expect(page.getByTestId("listener-surface")).toHaveAttribute("data-view", "captions");
-    await page.getByTestId("listen-button").click();
+    await page.getByTestId("replay-play").click();
     await expect(page.getByTestId("caption-stage")).toContainText("Zarpamos", { timeout: 5000 });
     await page.getByTestId("language-button").click();
     await page.getByTestId("language-sheet").getByRole("button", { name: /Português/ }).click();

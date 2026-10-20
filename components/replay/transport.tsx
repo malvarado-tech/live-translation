@@ -11,6 +11,7 @@ export function Transport({
   onPause,
   onSeek,
   labels,
+  disabled = false,
   testId = "replay-transport",
 }: {
   t: number;
@@ -20,6 +21,8 @@ export function Transport({
   onPause: () => void;
   onSeek: (s: number) => void;
   labels: { play: string; pause: string; position: string };
+  /** Nothing to play yet (the manifest is still loading). */
+  disabled?: boolean;
   testId?: string;
 }) {
   return (
@@ -30,10 +33,11 @@ export function Transport({
       <button
         type="button"
         onClick={playing ? onPause : onPlay}
+        disabled={disabled}
         aria-label={playing ? labels.pause : labels.play}
         data-testid="replay-play"
         data-state={playing ? "playing" : "paused"}
-        className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-primary text-on-primary"
+        className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-primary text-on-primary disabled:opacity-50"
       >
         {playing ? (
           <svg aria-hidden width="22" height="22" viewBox="0 0 22 22" fill="currentColor">

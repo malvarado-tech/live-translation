@@ -122,12 +122,10 @@ export default function ReplayPage() {
         lines={lines}
         captionsAvailable
         channels={listChannels}
-        primary={
-          player.started
-            ? { kind: "mute", muted, onToggle: () => setMuted((m) => !m) }
-            : { kind: "listen", onClick: play, busy: state.kind !== "ready" }
-        }
-        notice={player.blocked ? t.audioBlocked : null}
+        // The transport's play button starts playback (inside the tap, which
+        // iOS requires), so the thumb bar never repeats it with Listen.
+        primary={{ kind: "mute", muted, onToggle: () => setMuted((m) => !m) }}
+        notice={player.blocked ? t.audioBlockedReplay : null}
         transport={
           <Transport
             t={player.t}
@@ -136,6 +134,7 @@ export default function ReplayPage() {
             onPlay={play}
             onPause={player.pause}
             onSeek={player.seek}
+            disabled={state.kind !== "ready"}
             labels={{ play: t.play, pause: t.pause, position: t.position }}
           />
         }
