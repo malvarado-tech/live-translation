@@ -1040,12 +1040,12 @@ export default function OperatorPage({
     addLanguage:
       LIVEKIT_ENABLED && session.hasRoom && addable.length > 0 ? (
         <div className="flex flex-wrap items-center gap-2">
-          <label className="flex items-center gap-2 text-sm text-silk">
+          <label className="flex min-w-0 max-w-full flex-wrap items-center gap-2 text-sm text-silk">
             <span>Add language</span>
             <select
               value={addCode}
               onChange={(e) => setAddLang(e.target.value)}
-              className="min-h-11 rounded-md border border-btn-line bg-panel px-2 text-[15px] text-ink"
+              className="min-h-11 min-w-0 max-w-full rounded-md border border-btn-line bg-panel px-2 text-[15px] text-ink"
             >
               {addable.map((l) => (
                 <option key={l.code} value={l.code}>
