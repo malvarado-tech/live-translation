@@ -12,7 +12,7 @@ The app has three surfaces.
 
 Every surface has a light theme (default) and a **Night** theme for dark rooms. Theme and view are remembered per device.
 
-**Replay** (`/replay` and `/replay/operator`): a recorded 1962 speech with translated captions and AI-generated voices in Spanish and Portuguese, played through the same listener and operator views. It needs no keys and calls no server route, so it also works from a static export. Credits and licence are in `public/replay/ATTRIBUTION.txt`.
+**Replay** (`/replay` and `/replay/operator`): a recorded 1962 speech with translated captions and AI-generated voices in Spanish and Portuguese, played through the same listener and operator views. It needs no keys and calls no server route, so it also works from a static export; for a sub-path, set `NEXT_PUBLIC_BASE_PATH` (for example `/demos/translation`) at build time. Credits and licence are in `public/replay/ATTRIBUTION.txt`.
 
 Translation runs on OpenAI's `gpt-realtime-translate` model. The translated audio is fanned out through a self-hosted [LiveKit](https://livekit.io) server, so the translation cost does not grow with the number of listeners.
 
@@ -21,36 +21,40 @@ Translation runs on OpenAI's `gpt-realtime-translate` model. The translated audi
 <table>
   <tr>
     <td colspan="3">
-      <img src="docs/screenshots/operator-desk.png" alt="Operator dashboard, Desk view: input strip, two language strips, add language, listener QR code">
-      <p align="center"><sub>Operator, Desk view: the input and each language as a channel strip, the event QR code and what listeners see.</sub></p>
+      <img src="docs/screenshots/operator-desk.png" alt="Operator dashboard, Desk view: input strip, four language strips, listener QR code, transcript lanes">
+      <p align="center"><sub>Operator, Desk view: the input and each language as a channel strip, the event QR code, the source and translated transcript.</sub></p>
     </td>
   </tr>
   <tr>
     <td colspan="3">
       <img src="docs/screenshots/operator-rows-night.png" alt="Operator dashboard, Rows view, Night theme">
-      <p align="center"><sub>Operator, Rows view, Night theme.</sub></p>
+      <p align="center"><sub>Operator, Rows view, Night theme: one row per channel, the alert slot and the transcript at reading size.</sub></p>
     </td>
   </tr>
   <tr>
     <td width="33%">
-      <img src="docs/screenshots/event-page.png" alt="Event page with the live languages">
+      <img src="docs/screenshots/listener-captions.png" alt="Listener, Captions view: event title, language button, captions, status line, Mute and Options">
+      <p align="center"><sub>Listener, Captions view.</sub></p>
+    </td>
+    <td width="33%">
+      <img src="docs/screenshots/listener-receiver.png" alt="Listener, Receiver view: language code, level meter and the last caption lines">
+      <p align="center"><sub>Listener, Receiver view.</sub></p>
+    </td>
+    <td width="33%">
+      <img src="docs/screenshots/event-page.png" alt="Event page with the languages of the event and their state">
       <p align="center"><sub>Event page: one code, every language.</sub></p>
     </td>
-    <td width="33%">
-      <img src="docs/screenshots/listener-receiver.png" alt="Listener, Receiver view">
-      <p align="center"><sub>Listener, Receiver view (replay).</sub></p>
-    </td>
-    <td width="33%">
-      <img src="docs/screenshots/listener-captions-night.png" alt="Listener, Captions view, Night theme">
-      <p align="center"><sub>Listener, Captions view, Night theme (replay).</sub></p>
-    </td>
   </tr>
   <tr>
     <td width="33%">
-      <img src="docs/screenshots/listener-reconnecting.png" alt="Listener during a network drop">
+      <img src="docs/screenshots/listener-reconnecting.png" alt="Listener during a network drop, with the reconnection attempt on the status line">
       <p align="center"><sub>Network drop: the page rejoins on its own.</sub></p>
     </td>
-    <td colspan="2"></td>
+    <td width="33%">
+      <img src="docs/screenshots/replay-night.png" alt="Replay listener, Night theme, with the play control and position">
+      <p align="center"><sub>Replay, Night theme: the 1962 recording with translated captions and voice.</sub></p>
+    </td>
+    <td width="33%"></td>
   </tr>
 </table>
 
