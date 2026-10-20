@@ -32,12 +32,12 @@ Restart the Next.js dev server after changing any of them; `NEXT_PUBLIC_` values
 
 ## Running a session
 
-1. **Open room**: connects to LiveKit and shows the event QR code (one code for every language) with a projector view. No translation runs and nothing is billed. Listeners who join see "Broadcast not started; audio starts automatically".
+1. **Open room**: connects to LiveKit and shows the event QR code (one code for every language) with a projector view. **Open QR page** opens `/e/[event]/qr` in a new tab: the code full screen with its short URL, the event title and the live languages, for a projector or a second screen. It refreshes on its own and has no controls besides a link back to the event page. No translation runs and nothing is billed. Listeners who join see "Broadcast not started; audio starts automatically".
 2. **Start translation** (Space): opens the OpenAI session and publishes the translated audio to the room. Billing starts. **Start original audio** publishes the speaker's audio as is, for listeners of the source language, and bills nothing.
 3. **Pause** (Space): closes the translation session but keeps the room open, so listeners stay connected and see "Paused between speakers". Use it between speakers, during breaks and during Q&A.
 4. **End session**: asks for confirmation, tells listeners the session ended, tears everything down and writes the session report to `benchmarks/`.
 
-Event ID, title, language and channel type are set in Setup and lock once the room is open, because the room name is derived from the event ID and language. **Change input** applies at the next start. The monitor output, monitor choice and the tab-audio copy are under "Session details and audio routing" and can change at any time.
+Event ID, title, language and channel type are set in Setup and lock once the room is open, because the room name is derived from the event ID and language. The **Audio** section stays on the live screen in both views: input device, monitor output device, input level, monitor choice (translation, input or mute) and **Refresh devices**. A new input applies at the next start; the monitor output and the monitor choice apply at once. The tab-audio copy is under "Session details and tab audio". The session bar stays at the top on wide screens, so **Open room** and **End session** are always in reach.
 
 Each language runs in its own operator tab with the same event ID; "Add language" opens one with the event prefilled. Every tab shows the other languages as strips or rows with their state, listener count and response time, read from the room server every 5 seconds. Their meters and transcripts are only available in their own tab.
 
@@ -45,7 +45,9 @@ Without `NEXT_PUBLIC_LIVEKIT_URL`, the flow collapses to Start and Stop on a sin
 
 ## Views and themes
 
-**Desk** shows the input and each language as vertical channel strips with a tally light, ladder meter, response time, listener count and on-air time, with transcript lanes below. **Rows** shows the same channels as horizontal rows, one alert slot with its fix, and the monitored transcript at reading size. Light is the default theme; **Night** suits dark rooms. View and theme are under **Settings** at the end of the session bar, and both choices are remembered on the device. Listeners choose their own view, theme and text size under **Options** on their phone.
+**Desk** shows the input and each language as vertical channel strips with a tally light, ladder meter, response time, listener count and on-air time, with the Audio section and transcript lanes below. **Rows** shows the same channels as horizontal rows, one alert slot with its fix, and the monitored transcript at reading size. Light is the default theme; **Night** suits dark rooms. View and theme are under **Settings** at the end of the session bar, and both choices are remembered on the device. Listeners choose their own view, theme and text size under **Options** on their phone.
+
+The transcript lanes, and the captions on listener phones, keep the whole session. They follow the newest line; scrolling up reads back and stops following, and **Back to latest** (**Volver a lo más reciente** in Spanish) or a scroll to the bottom resumes.
 
 ## Alerts
 
@@ -54,7 +56,7 @@ One alert shows at a time, the most severe first: a fault (with its cause, the f
 ## Audio devices
 
 - Device names appear only after the browser has microphone permission. **Test input** in Setup triggers the prompt and shows the input level before the room opens.
-- The monitor output can change mid-session (`setSinkId`). Safari does not support `setSinkId`, so the selector is disabled there.
+- The monitor output can change mid-session (`setSinkId`). Safari does not support `setSinkId`, so the selector is disabled there and marked "not supported in this browser".
 - **Raw audio** disables the browser's echo cancellation, noise suppression and automatic gain control. Turn it on for clean line-level inputs, such as a feed from a mixing desk or a virtual audio cable, where that processing causes pumping or clipping.
 - **Copy the translation to tab audio** keeps a second copy of the translation playing on the system default device, so a screen share in Zoom, Meet or OBS still carries the translation while the operator monitors on separate headphones.
 
@@ -72,7 +74,7 @@ The listener page states the broadcast: live, no audio at the moment (8 s of sil
 |---|---|---|
 | `OPENAI_API_KEY is not configured on the server` | Key missing from `.env.local` | Add it and restart the dev server |
 | `LIVEKIT_API_KEY / LIVEKIT_API_SECRET not configured` | LiveKit values missing | Fill them in, or use single-laptop mode |
-| Operator shows "On air" but there is no audio | Monitor set to Mute, tab muted or wrong output device | Check the Monitor button on the channel, tab volume and OS output |
+| Operator shows "On air" but there is no audio | Monitor set to Mute, tab muted or wrong output device | Check Monitor and the monitor output in the Audio section, tab volume and OS output |
 | Phone loads the listener page but buttons do nothing | Dev-origin protection returns 403 for the JavaScript | Add the LAN IP to `ALLOWED_DEV_ORIGINS` and restart |
 | Phone cannot reach the listener URL | Different Wi-Fi, or the QR code points at `localhost` | Set `NEXT_PUBLIC_LISTENER_BASE_URL` to the LAN IP |
 | Phone shows "Live" but stays silent | iOS blocks autoplay until a tap | The page asks for one tap on Listen; check headphones and volume |

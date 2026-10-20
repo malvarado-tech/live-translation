@@ -6,13 +6,14 @@ Real-time speech translation for live talks: one speaker, one realtime translati
 
 The app has three surfaces.
 
-- **Operator** (`/operator`): a dashboard on the laptop that receives the speaker's audio. Setup takes the event ID and title, the language, the input (with a level test) and the channel type: speech translation, or the speaker's original audio for listeners of the source language. Once the room is open, the dashboard shows an input meter, an output meter and the on-air state of each language of the event, one alert at a time with its fix, the transcript, the event QR code with a projector view, and session details (connections, response time, cost, event log). Two views: **Desk** (vertical channel strips, transcript lanes below) and **Rows** (horizontal channel rows, alert slot, transcript at reading size), chosen with the theme under **Settings** in the session bar. Keyboard: Space starts or pauses, M places a mark.
-- **Listeners** (`/listen/[room]`): a mobile web page opened from the QR code. It joins the room as a subscribe-only participant and plays the translated audio with captions. The screen keeps the event title, the current language (the button that changes it), the captions, one status line and Mute; view, theme, text size and interface language sit under **Options**. Two views: **Captions** (default, a caption stage) and **Receiver** (channel card with the language code and level meter, last caption lines). The page states whether the broadcast is live, paused, reconnecting or silent, rejoins on its own after a network drop, keeps the screen on while listening and shows the stream on the lock screen. The interface follows the room language (Spanish or English) and can be switched under Options.
+- **Operator** (`/operator`): a dashboard on the laptop that receives the speaker's audio. Setup takes the event ID and title, the language, the input (with a level test) and the channel type: speech translation, or the speaker's original audio for listeners of the source language. Once the room is open, the dashboard shows an input meter, an output meter and the on-air state of each language of the event, one alert at a time with its fix, an **Audio** section that stays on screen (input device, monitor output device, input level, monitor choice and a device refresh), the transcript with its whole history, the event QR code with a projector view and a full-screen QR page, and session details (connections, response time, cost, event log). Two views: **Desk** (vertical channel strips, transcript lanes below) and **Rows** (horizontal channel rows, alert slot, transcript at reading size), chosen with the theme under **Settings** in the session bar. Keyboard: Space starts or pauses, M places a mark.
+- **Listeners** (`/listen/[room]`): a mobile web page opened from the QR code. It joins the room as a subscribe-only participant and plays the translated audio with captions. The screen keeps the event title, the current language (the button that changes it), the captions, one status line and Mute; view, theme, text size and interface language sit under **Options**. Two views: **Captions** (default, a caption stage) and **Receiver** (channel card with the language code and level meter, caption lines below). Both keep every caption of the session: the newest line stays in view, scrolling up reads back, and **Back to latest** returns. The page states whether the broadcast is live, paused, reconnecting or silent, rejoins on its own after a network drop, keeps the screen on while listening and shows the stream on the lock screen. The interface follows the room language (Spanish or English) and can be switched under Options.
 - **Event page** (`/e/[event]`): one link and QR code for the whole event. It lists the languages of the event that currently have a room open, with their state, and listeners can come back to it to switch language without scanning another code.
+- **QR page** (`/e/[event]/qr`): the event QR code full screen for a projector, with the short URL, the event title and the live languages, refreshed every 15 seconds. The operator opens it in a new tab with **Open QR page**; `?lang=es` points the code at one language.
 
 Every surface has a light theme (default) and a **Night** theme for dark rooms. Theme and view are remembered per device.
 
-**Replay** (`/replay` and `/replay/operator`): a recorded 1962 speech with translated captions and AI-generated voices in Spanish and Portuguese, played through the same listener and operator views. It needs no keys and calls no server route, so it also works from a static export; for a sub-path, set `NEXT_PUBLIC_BASE_PATH` (for example `/demos/translation`) at build time. Credits and licence are in `public/replay/ATTRIBUTION.txt`.
+**Replay** (`/replay` and `/replay/operator`): a recorded 1962 speech with translated captions and AI-generated voices in Spanish and Portuguese, played through the same listener and operator views. The operator replay shows the Audio section and the room controls disabled, since a recording has no devices or room. It needs no keys and calls no server route, so it also works from a static export; for a sub-path, set `NEXT_PUBLIC_BASE_PATH` (for example `/demos/translation`) at build time. Credits and licence are in `public/replay/ATTRIBUTION.txt`.
 
 Translation runs on OpenAI's `gpt-realtime-translate` model. The translated audio is fanned out through a self-hosted [LiveKit](https://livekit.io) server, so the translation cost does not grow with the number of listeners.
 
@@ -21,14 +22,14 @@ Translation runs on OpenAI's `gpt-realtime-translate` model. The translated audi
 <table>
   <tr>
     <td colspan="3">
-      <img src="docs/screenshots/operator-desk.png" alt="Operator dashboard, Desk view: input strip, four language strips, listener QR code, transcript lanes">
-      <p align="center"><sub>Operator, Desk view: the input and each language as a channel strip, the event QR code, the source and translated transcript.</sub></p>
+      <img src="docs/screenshots/operator-desk.png" alt="Operator dashboard, Desk view: input strip, four language strips, listener QR code, Audio section with input and output devices, transcript lanes">
+      <p align="center"><sub>Operator, Desk view: the input and each language as a channel strip, the event QR code, the Audio section, the source and translated transcript.</sub></p>
     </td>
   </tr>
   <tr>
     <td colspan="3">
       <img src="docs/screenshots/operator-rows-night.png" alt="Operator dashboard, Rows view, Night theme">
-      <p align="center"><sub>Operator, Rows view, Night theme: one row per channel, the alert slot and the transcript at reading size.</sub></p>
+      <p align="center"><sub>Operator, Rows view, Night theme: one row per channel, the alert slot, the Audio section and the transcript at reading size.</sub></p>
     </td>
   </tr>
   <tr>
@@ -37,7 +38,7 @@ Translation runs on OpenAI's `gpt-realtime-translate` model. The translated audi
       <p align="center"><sub>Listener, Captions view.</sub></p>
     </td>
     <td width="33%">
-      <img src="docs/screenshots/listener-receiver.png" alt="Listener, Receiver view: language code, level meter and the last caption lines">
+      <img src="docs/screenshots/listener-receiver.png" alt="Listener, Receiver view: language code, level meter and the caption lines">
       <p align="center"><sub>Listener, Receiver view.</sub></p>
     </td>
     <td width="33%">
@@ -55,6 +56,12 @@ Translation runs on OpenAI's `gpt-realtime-translate` model. The translated audi
       <p align="center"><sub>Replay, Night theme: the 1962 recording with translated captions and voice.</sub></p>
     </td>
     <td width="33%"></td>
+  </tr>
+  <tr>
+    <td colspan="3">
+      <img src="docs/screenshots/qr-page.png" alt="QR page: a large QR code, the short URL, the event title and the live languages">
+      <p align="center"><sub>QR page for a projector: the event code, its short URL and the live languages.</sub></p>
+    </td>
   </tr>
 </table>
 
@@ -81,7 +88,7 @@ Long-lived keys (`OPENAI_API_KEY`, `LIVEKIT_API_SECRET`, `GOOGLE_AI_API_KEY`) ar
 
 A session has four steps on the operator dashboard:
 
-1. **Open room**: the QR code goes live and listeners can join and wait. Nothing is billed.
+1. **Open room**: the QR code goes live and listeners can join and wait. Nothing is billed. **Open QR page** shows the code full screen in a new tab for the projector.
 2. **Start translation** (or **Start original audio**): the OpenAI session opens and billing starts. Original audio sends the speaker's audio as is and bills nothing.
 3. **Pause**: the translation session closes but listeners stay connected and see "Paused between speakers". Use it between speakers and during breaks.
 4. **End session**: after a confirmation, everything is torn down, listeners see "Session ended" and the session report is written.
@@ -179,7 +186,7 @@ The translation session bills for as long as it is open, whether or not anyone i
 - No PWA manifest; the listener page is a plain mobile web page.
 - The Gemini Live engine (`lib/gemini-live.ts`, `/api/gemini-token`) is kept in the code but hidden in the UI.
 - The response time shown is first-token latency, not end-to-end audio latency.
-- Tests: `npm test` (unit), `npm run test:e2e` (both views and themes on every surface, contrast, 320 px layout, target sizes, replay) and `npm run check:contrast` (colour tokens). With a LiveKit dev server, `E2E_LIVEKIT=1` adds the room flow; the setup is at the top of `tests/e2e/livekit.spec.ts`. The translation engine itself is tested by hand, since it needs an OpenAI key.
+- Tests: `npm test` (unit), `npm run test:e2e` (both views and themes on every surface, contrast, 320 px layout, target sizes, the Audio section, the QR page, caption scroll-back, replay) and `npm run check:contrast` (colour tokens). With a LiveKit dev server, `E2E_LIVEKIT=1` adds the room flow; the setup is at the top of `tests/e2e/livekit.spec.ts`. The translation engine itself is tested by hand, since it needs an OpenAI key.
 
 ## Privacy
 
